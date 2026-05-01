@@ -529,65 +529,154 @@ async function loadLIs(){const{data,error}=await SB.from('proposal_line_items').
 
 /* zuper */
 async function getMeasTokens(k,u){const r=await zf(`${u}measurements/categories?sort=ASC&sort_by=created_at`,{headers:zh(k)});if(!r.ok)return[];const toks=[];for(const c of(r.j?.data||[])){for(const t of(c.measurement_tokens||c.tokens||[]))toks.push({uid:t.measurement_token_uid,name:t.measurement_token_name||'',uom:t.uom||'',catUid:c.measurement_category_uid});}return toks;}
-async function getProdCat(k,u){const r=await zf(`${u}products/category?count=100&page=1`,{headers:zh(k)});const c=r.j?.data||r.j?.categories||[];return c[0]?.product_category_uid||c[0]?.category_uid||null;}
-function mkProd(p,cu){return{product:{product_name:p.product_name,product_id:`SRS-${p.product_id}`,is_available:true,product_category:cu||'UNCATEGORIZED',price:parseFloat(p.suggested_price)||0,min_quantity:0,currency:'',quantity:0,product_manual_link:'',product_description:'',product_image:p.product_image_url||'',product_type:'PARTS',pricing_level:'ROLLUP',brand:p.manufacturer_norm||'',track_quantity:false,specification:'',has_custom_tax:false,meta_data:[],uom:uom(p.product_uom),is_billable:true,consider_profitability:true,is_commissionable:true,location_availability:[],tax:{tax_exempt:false},product_files:[],option:{customer_selection:false,option_label:'Option',option_values:[]}},vendor:[]};}
+async function getProdCat(k,u){
+  const r=await zf(`${u}products/category?count=100&page=1`,{headers:zh(k)});
+  const c=r.j?.data||r.j?.categories||[];
+  return c[0]?.product_category_uid||c[0]?.category_uid||null;
+}
+async function ensureProdCat(k,u,existing){
+  if(existing)return existing;
+  // No category found — create a default "CPQ Imports" one
+  try{
+    const r=await zf(`${u}products/category`,{method:'POST',headers:zh(k),body:JSON.stringify({product_category:{category_name:'CPQ Imports',business_unit:[]}})});
+    return r.j?.data?.product_category_uid||r.j?.data?.category_uid||null;
+  }catch(e){return null;}
+}
+// Extract meaningful error text from a Zuper API response body
+function apiErr(j){
+  if(!j)return'no response';
+  if(typeof j==='string')return j.slice(0,120);
+  return j.message||j.error||(Array.isArray(j.errors)?j.errors[0]:'')||JSON.stringify(j).slice(0,120);
+}
+function mkProd(p,cu){
+  const prodObj={
+    product_name:p.product_name,
+    product_id:`SRS-${p.product_id}`,
+    is_available:true,
+    price:parseFloat(p.suggested_price)||0,
+    min_quantity:0,currency:'',quantity:0,
+    product_manual_link:'',product_description:'',
+    product_image:p.product_image_url||'',
+    product_type:'PARTS',pricing_level:'ROLLUP',
+    brand:p.manufacturer_norm||'',
+    track_quantity:false,specification:'',
+    has_custom_tax:false,meta_data:[],
+    uom:uom(p.product_uom),
+    is_billable:true,consider_profitability:true,is_commissionable:true,
+    location_availability:[],
+    tax:{tax_exempt:false},product_files:[],
+    option:{customer_selection:false,option_label:'Option',option_values:[]},
+  };
+  // Only set product_category if we have a valid UID — never send 'UNCATEGORIZED'
+  if(cu)prodObj.product_category=cu;
+  return{product:prodObj,vendor:[]};
+}
 function mkFormula(li,toks){if(li.formula_type==='direct_input'||!li.formula_expr)return null;const sorted=[...toks].sort((a,b)=>b.name.length-a.name.length);let mapped=li.formula_expr;const em=[];let c=1;for(const t of sorted){if(!t.name||!mapped.includes(t.name))continue;const k=`$${c}`;mapped=mapped.split(t.name).join(k);em.push({key:k,type:'MEASUREMENT',measurement_token_uid:t.uid,measurement_category_uid:t.catUid});c++;}if(!em.length)return null;const ck=li.display_name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').substring(0,50)+'_cpq';return{formula:{formula_name:`${li.display_name} (CPQ)`,formula_key:ck,formula_category:'AREA_MEASUREMENT',formula_description:li.display_name,formula:{expression:mapped.replace(/\s+/g,''),expression_map:em,rounding_mechanism:'NEXT_WHOLE_NUMBER'}}};}
 
 async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,onLog}){
   const sig=signal||{cancel:false,pause:false};
   const{key,url}=auth,log=m=>onLog&&onLog(m);
-  // Checks signal between operations — throws 'CANCELLED' so callers can distinguish
-  async function chk(){
-    while(sig.pause&&!sig.cancel)await slp(200);
-    if(sig.cancel)throw new Error('CANCELLED');
-  }
+  async function chk(){while(sig.pause&&!sig.cancel)await slp(200);if(sig.cancel)throw new Error('CANCELLED');}
 
+  // ── Phase 1: Tokens + ensure product category exists ─────────────────────
   await chk();
-  onPhase('tokens','active');log('Fetching measurement tokens...');
-  const[toks,cu]=await Promise.all([getMeasTokens(key,url),getProdCat(key,url)]);
-  log(`${toks.length} tokens, category: ${cu||'none'}`);onPhase('tokens','done',{count:toks.length});
+  onPhase('tokens','active');log('Fetching measurement tokens and product category...');
+  const[toks,rawCat]=await Promise.all([getMeasTokens(key,url),getProdCat(key,url)]);
+  const cu=await ensureProdCat(key,url,rawCat);
+  log(`${toks.length} tokens · category UID: ${cu||'none (no category set)'}`);
+  onPhase('tokens','done',{count:toks.length});
 
+  // ── Phase 2: Products ─────────────────────────────────────────────────────
   await chk();
   onPhase('products','active');log(`Creating ${selProds.length} products...`);
   const pR=[],um={};let ps=0,pf=0;
+  const prodErrLog=[];
+
+  // Pre-fetch existing products to handle re-runs without duplicates
+  const existProdByExtId={};
+  try{
+    let pg=1;
+    while(true){
+      const r=await zf(`${url}product?count=100&page=${pg}`,{headers:zh(key)});
+      const items=r.j?.data||[];
+      items.forEach(p=>{if(p.product_id&&p.product_uid)existProdByExtId[p.product_id]=p.product_uid;});
+      if(items.length<100)break;pg++;
+    }
+    if(Object.keys(existProdByExtId).length)log(`Found ${Object.keys(existProdByExtId).length} existing products — will reuse`);
+  }catch(e){if(e.message==='CANCELLED')throw e;log('Could not pre-check products: '+e.message);}
+
   const pls=selProds.map(p=>mkProd(p,cu));
+
   for(const[ci,chunk]of cks(pls,BULK).entries()){
     await chk();
-    const si=ci*BULK;let ok=false;
-    try{const r=await zf(`${url}products/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({products:chunk})});if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){for(let i=0;i<chunk.length;i++){const p=selProds[si+i],uid=r.j.data[i]?.product_uid;if(uid){um[p.product_id]=uid;ps++;}else pf++;pR.push({name:p.product_name,uid:uid||null,ok:!!uid});}ok=true;}}catch(e){if(e.message==='CANCELLED')throw e;log('Bulk prod error:'+e.message);}
-    if(!ok){
-      // Bulk failed — fall back to concurrent individual creates (FALLBACK_CONC in parallel)
-      await Promise.all(Array.from({length:chunk.length},(_,i)=>
-        (async()=>{
-          const p=selProds[si+i];
-          if(sig.cancel)return;
-          try{const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(chunk[i])});const uid=r.j?.data?.product_uid;if(uid){um[p.product_id]=uid;ps++;}else pf++;pR.push({name:p.product_name,uid:uid||null,ok:!!uid});}
-          catch(e){if(e.message==='CANCELLED')throw e;pf++;pR.push({name:p.product_name,uid:null,ok:false});}
-        })()
-      ).slice(0,FALLBACK_CONC));  // cap at FALLBACK_CONC concurrent requests
-      // For chunks > FALLBACK_CONC, run remaining in windows of FALLBACK_CONC
-      if(chunk.length>FALLBACK_CONC){
-        for(let w=FALLBACK_CONC;w<chunk.length;w+=FALLBACK_CONC){
-          await Promise.all(Array.from({length:Math.min(FALLBACK_CONC,chunk.length-w)},(_,j)=>
-            (async()=>{
-              const i=w+j,p=selProds[si+i];
-              if(sig.cancel)return;
-              try{const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(chunk[i])});const uid=r.j?.data?.product_uid;if(uid){um[p.product_id]=uid;ps++;}else pf++;pR.push({name:p.product_name,uid:uid||null,ok:!!uid});}
-              catch(e){if(e.message==='CANCELLED')throw e;pf++;pR.push({name:p.product_name,uid:null,ok:false});}
-            })()
-          ));
+    const si=ci*BULK;
+
+    // Split chunk: items that already exist vs new ones
+    const newIdxs=[],reuseIdxs=[];
+    for(let i=0;i<chunk.length;i++){
+      if(existProdByExtId[chunk[i].product.product_id])reuseIdxs.push(i);
+      else newIdxs.push(i);
+    }
+    // Record reused products
+    reuseIdxs.forEach(i=>{
+      const p=selProds[si+i],uid=existProdByExtId[chunk[i].product.product_id];
+      um[p.product_id]=uid;ps++;
+      pR.push({name:p.product_name,uid,ok:true,reused:true});
+    });
+
+    if(newIdxs.length===0){await slp(BDLY);continue;}
+    const newChunk=newIdxs.map(i=>chunk[i]);
+
+    // Try bulk create for new items
+    let bulkOk=false;
+    try{
+      const r=await zf(`${url}products/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({products:newChunk})});
+      if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){
+        for(let i=0;i<newIdxs.length;i++){
+          const p=selProds[si+newIdxs[i]];
+          const uid=r.j.data[i]?.product_uid;
+          if(uid){um[p.product_id]=uid;ps++;}
+          else{pf++;if(prodErrLog.length<20)prodErrLog.push(`${p.product_name}: ${apiErr(r.j.data[i])||'no UID'}`);}
+          pR.push({name:p.product_name,uid:uid||null,ok:!!uid});
         }
+        bulkOk=true;
+      }else if(!r.ok){
+        if(prodErrLog.length<3)prodErrLog.push(`Bulk HTTP ${r.status}: ${apiErr(r.j)}`);
+      }
+    }catch(e){if(e.message==='CANCELLED')throw e;prodErrLog.push('Bulk exc: '+e.message);}
+
+    // FIXED fallback — windowed from 0, no double-execution
+    if(!bulkOk){
+      for(let w=0;w<newIdxs.length;w+=FALLBACK_CONC){
+        await Promise.all(newIdxs.slice(w,w+FALLBACK_CONC).map(async(ci2)=>{
+          if(sig.cancel)return;
+          const p=selProds[si+ci2];
+          try{
+            const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(chunk[ci2])});
+            const uid=r.j?.data?.product_uid;
+            if(uid){um[p.product_id]=uid;ps++;}
+            else{pf++;if(prodErrLog.length<20)prodErrLog.push(`${p.product_name}: ${apiErr(r.j)}`);}
+            pR.push({name:p.product_name,uid:uid||null,ok:!!uid});
+          }catch(e){
+            if(e.message==='CANCELLED')throw e;
+            pf++;pR.push({name:p.product_name,uid:null,ok:false});
+            if(prodErrLog.length<20)prodErrLog.push(`${p.product_name}: ${e.message}`);
+          }
+        }));
       }
     }
     await slp(BDLY);
   }
-  log(`Products: ${ps} created, ${pf} failed`);onPhase('products',pf===0?'done':'partial',{success:ps,failed:pf});
+  log(`Products: ${ps} created/reused, ${pf} failed`);
+  if(pf>0){log(`--- Product errors (${Math.min(prodErrLog.length,10)} shown):`);prodErrLog.slice(0,10).forEach(e=>log('  \u2717 '+e));}
+  onPhase('products',pf===0?'done':'partial',{success:ps,failed:pf});
 
+  // ── Phase 3: Formulas ─────────────────────────────────────────────────────
   await chk();
   onPhase('formulas','active');
   const fR=[],fu={};let fs=0,fReused=0,fsk=0,ff=0;
+  const fErrLog=[];
 
-  // ── Pre-fetch existing formulas in this account to avoid duplicates ──────
   const existingByKey={},existingByName={};
   try{
     let pg=1;
@@ -601,58 +690,113 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
       });
       if(items.length<100)break;pg++;
     }
-    log(`Existing formulas in account: ${Object.keys(existingByKey).length} — will skip duplicates`);
-  }catch(e){if(e.message==='CANCELLED')throw e;log('Warning: could not fetch existing formulas — may create duplicates');}
+    log(`Existing formulas: ${Object.keys(existingByKey).length} — skipping duplicates`);
+  }catch(e){if(e.message==='CANCELLED')throw e;log('Could not check existing formulas: '+e.message);}
 
-  // Build list of formulas to create, reusing any that already exist
   const fps=[];
   for(const liId of[...new Set(Object.values(mappings).filter(Boolean))]){
     const li=lineItems.find(l=>l.id===liId);if(!li)continue;
     const fp=mkFormula(li,toks);
     if(!fp){fsk++;continue;}
-    // Check if this formula already exists — reuse if so
-    const ck=fp.formula.formula_key,cn=fp.formula.formula_name;
-    const existUid=existingByKey[ck]||existingByName[cn];
-    if(existUid){
-      fu[li.id]=existUid;fReused++;
-      fR.push({name:li.display_name,uid:existUid,ok:true,reused:true});
-    }else{
-      fps.push({li,fp});
-    }
+    const existUid=existingByKey[fp.formula.formula_key]||existingByName[fp.formula.formula_name];
+    if(existUid){fu[li.id]=existUid;fReused++;fR.push({name:li.display_name,uid:existUid,ok:true,reused:true});}
+    else fps.push({li,fp});
   }
-  log(`Formulas: ${fps.length} new to create, ${fReused} reused, ${fsk} skipped...`);
-  for(const[ci,chunk]of cks(fps,BULK).entries()){
-    await chk();
-    let ok=false;
-    try{const r=await zf(`${url}invoice_estimate/cpq/formulas/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({formulas:chunk.map(x=>x.fp)})});if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){for(let i=0;i<chunk.length;i++){const{li}=chunk[i],uid=r.j.data[i]?.formula_uid;if(uid){fu[li.id]=uid;fs++;}else ff++;fR.push({name:li.display_name,uid:uid||null,ok:!!uid});}ok=true;}}catch(e){if(e.message==='CANCELLED')throw e;log('Bulk formula error:'+e.message);}
+  log(`Formulas: ${fps.length} new, ${fReused} reused, ${fsk} skipped`);
+
+  for(const[,chunk]of cks(fps,BULK).entries()){
+    await chk();let ok=false;
+    try{
+      const r=await zf(`${url}invoice_estimate/cpq/formulas/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({formulas:chunk.map(x=>x.fp)})});
+      if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){
+        for(let i=0;i<chunk.length;i++){
+          const{li}=chunk[i],uid=r.j.data[i]?.formula_uid;
+          if(uid){fu[li.id]=uid;fs++;}
+          else{ff++;if(fErrLog.length<10)fErrLog.push(`${li.display_name}: ${apiErr(r.j.data[i])||'no UID'}`);}
+          fR.push({name:li.display_name,uid:uid||null,ok:!!uid});
+        }
+        ok=true;
+      }else if(!r.ok){if(fErrLog.length<3)fErrLog.push(`Bulk HTTP ${r.status}: ${apiErr(r.j)}`);}
+    }catch(e){if(e.message==='CANCELLED')throw e;fErrLog.push('Bulk: '+e.message);}
     if(!ok){
-      // Concurrent fallback for formulas
       for(let w=0;w<chunk.length;w+=FALLBACK_CONC){
         await Promise.all(chunk.slice(w,w+FALLBACK_CONC).map(async({li,fp})=>{
           if(sig.cancel)return;
-          try{const r=await zf(`${url}invoice_estimate/cpq/formulas`,{method:'POST',headers:zh(key),body:JSON.stringify(fp)});const uid=r.j?.data?.formula_uid;if(uid){fu[li.id]=uid;fs++;}else ff++;fR.push({name:li.display_name,uid:uid||null,ok:!!uid});}
-          catch(e){if(e.message==='CANCELLED')throw e;ff++;fR.push({name:li.display_name,uid:null,ok:false});}
+          try{
+            const r=await zf(`${url}invoice_estimate/cpq/formulas`,{method:'POST',headers:zh(key),body:JSON.stringify(fp)});
+            const uid=r.j?.data?.formula_uid;
+            if(uid){fu[li.id]=uid;fs++;}
+            else{ff++;if(fErrLog.length<10)fErrLog.push(`${li.display_name}: ${apiErr(r.j)}`);}
+            fR.push({name:li.display_name,uid:uid||null,ok:!!uid});
+          }catch(e){if(e.message==='CANCELLED')throw e;ff++;fR.push({name:li.display_name,uid:null,ok:false});fErrLog.push(li.display_name+': '+e.message);}
         }));
       }
     }
     await slp(BDLY);
   }
   log(`Formulas: ${fs} created, ${fReused} reused, ${fsk} skipped, ${ff} failed`);
+  if(ff>0){log('--- Formula errors:');fErrLog.slice(0,8).forEach(e=>log('  \u2717 '+e));}
   onPhase('formulas','done',{success:fs,reused:fReused,skipped:fsk,failed:ff});
 
+  // ── Phase 4: Packages ─────────────────────────────────────────────────────
   await chk();
   onPhase('packages','active');
-  const pkgR=[],pkgPl=['good','better','best'].map(tk=>{
-    const tp=tiers[tk]||[],un=tiers.untiered||[],all=tk==='best'?[...tp,...un]:tp;
-    const lis=all.filter(p=>um[p.product_id]).map(p=>({line_item_type:'ITEM',product_uid:um[p.product_id],product_id:`SRS-${p.product_id}`,product_type:'PARTS',name:p.product_name,description:'',uom:uom(p.product_uom),quantity:1,unit_price:parseFloat(p.suggested_price)||0,purchase_price:0,discount:0,discount_type:'FIXED',serial_nos:[],total:parseFloat(p.suggested_price)||0,section_type:'EXPANDED',show_section_total:false,show_child_prices:true,brand:p.manufacturer_norm||'',specification:'',image:'',location_uid:'',location_name:'',tax:{tax_exempt:false},is_billable:true,associated_products:[],...(mappings[p.product_id]&&fu[mappings[p.product_id]]?{formula:fu[mappings[p.product_id]]}:{})}));
-    return{package_name:`${TM[tk].label} - ${TM[tk].sub}`,line_items:lis,tier:tk};
+  const pkgR=[];
+  const availUids=Object.keys(um).length;
+  log(`Building packages — ${availUids} product UIDs available`);
+
+  const pkgDefs=['good','better','best'].map(tk=>{
+    const tp=tiers[tk]||[],un=tiers.untiered||[];
+    const all=tk==='best'?[...tp,...un]:tp;
+    let matched=all.filter(p=>um[p.product_id]);
+    // If tier is empty, use proportion of all imported products as fallback
+    if(matched.length===0&&availUids>0){
+      const allImp=selProds.filter(p=>um[p.product_id]);
+      const take=tk==='good'?Math.ceil(allImp.length*0.4):tk==='better'?Math.ceil(allImp.length*0.7):allImp.length;
+      matched=allImp.slice(0,take);
+    }
+    const line_items=matched.map(p=>({
+      line_item_type:'ITEM',product_uid:um[p.product_id],
+      product_id:`SRS-${p.product_id}`,product_type:'PARTS',
+      name:p.product_name,description:'',uom:uom(p.product_uom),
+      quantity:1,unit_price:parseFloat(p.suggested_price)||0,purchase_price:0,
+      discount:0,discount_type:'FIXED',serial_nos:[],
+      total:parseFloat(p.suggested_price)||0,
+      section_type:'EXPANDED',show_section_total:false,show_child_prices:true,
+      brand:p.manufacturer_norm||'',specification:'',image:'',
+      location_uid:'',location_name:'',
+      tax:{tax_exempt:false},is_billable:true,associated_products:[],
+      ...(mappings[p.product_id]&&fu[mappings[p.product_id]]?{formula:fu[mappings[p.product_id]]}:{})
+    }));
+    return{package_name:`${TM[tk].label} - ${TM[tk].sub}`,line_items,tier:tk};
   });
-  log('Creating 3 service packages...');
-  let bulkOk=false;
-  try{const r=await zf(`${url}invoice_estimate/package/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({invoice_estimate_packages:pkgPl.map(({package_name,line_items})=>({package_name,line_items}))})});if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){for(let i=0;i<pkgPl.length;i++){const uid=r.j.data[i]?.package_uid;pkgR.push({name:pkgPl[i].package_name,uid:uid||null,ok:!!uid,tier:pkgPl[i].tier});}bulkOk=true;}}catch(e){if(e.message==='CANCELLED')throw e;log('Bulk package error:'+e.message);}
-  if(!bulkOk){for(const{package_name,line_items,tier}of pkgPl){try{const r=await zf(`${url}invoice_estimate/package`,{method:'POST',headers:zh(key),body:JSON.stringify({invoice_estimate_package:{package_name,line_items}})});const uid=r.j?.data?.package_uid;pkgR.push({name:package_name,uid:uid||null,ok:!!uid,tier});}catch(e){if(e.message==='CANCELLED')throw e;pkgR.push({name:package_name,uid:null,ok:false,tier});}}}
+
+  for(const{package_name,line_items,tier}of pkgDefs){
+    await chk();
+    if(line_items.length===0){
+      log(`\u26a0 Skipping "${package_name}" — no products available`);
+      pkgR.push({name:package_name,uid:null,ok:false,tier,error:'No products with UIDs'});
+      continue;
+    }
+    log(`Creating "${package_name}" with ${line_items.length} line items...`);
+    try{
+      const r=await zf(`${url}invoice_estimate/package`,{
+        method:'POST',headers:zh(key),
+        body:JSON.stringify({invoice_estimate_package:{package_name,line_items}}),
+      });
+      const uid=r.j?.data?.package_uid;
+      if(uid){pkgR.push({name:package_name,uid,ok:true,tier});log(`\u2713 "${package_name}" — ${uid.slice(0,8)}...`);}
+      else{const err=apiErr(r.j);pkgR.push({name:package_name,uid:null,ok:false,tier,error:err});log(`\u2717 "${package_name}": ${err}`);}
+    }catch(e){
+      if(e.message==='CANCELLED')throw e;
+      pkgR.push({name:package_name,uid:null,ok:false,tier,error:e.message});
+      log(`\u2717 "${package_name}": ${e.message}`);
+    }
+    await slp(300);
+  }
   const ps2=pkgR.filter(r=>r.ok).length,pf2=pkgR.filter(r=>!r.ok).length;
-  log(`Packages: ${ps2} created, ${pf2} failed`);onPhase('packages',pf2===0?'done':'partial',{success:ps2,failed:pf2});
+  log(`Packages: ${ps2} created, ${pf2} failed`);
+  onPhase('packages',pf2===0?'done':'partial',{success:ps2,failed:pf2});
   return{pR,fR,pkgR};
 }
 
@@ -683,6 +827,40 @@ function deleteEndpoint(type,url,uid){
 }
 
 /* ─── UI ─────────────────────────────────────────────────────────────── */
+/* ── UOM-aware product cost estimator ──────────────────────────────────────
+ * Estimates installed cost from actual suggested_price × UOM-based quantity.
+ */
+function estProdCost(p,sqft,pitchMult,storyMult){
+  const price=parseFloat(p.suggested_price)||0;
+  if(!price)return 0;
+  const rawUom=(uom(p.product_uom)||'').toLowerCase().trim();
+  const sq=sqft/100,perim=Math.pow(sqft,0.5)*4.2;
+  let qty;
+  switch(rawUom){
+    case'sq':case'square':case'squares':qty=sq*pitchMult*storyMult;break;
+    case'lf':case'linear foot':case'linear feet':case'lin ft':qty=perim*pitchMult;break;
+    case'roll':case'rolls':qty=Math.ceil(sq*1.15);break;
+    case'bundle':case'bundles':case'bdl':case'bdls':qty=Math.ceil(sq*3*pitchMult);break;
+    case'pc':case'pcs':case'piece':case'pieces':qty=Math.ceil(perim/10);break;
+    case'ea':case'each':qty=storyMult;break;
+    default:qty=sq*pitchMult;
+  }
+  return price*qty;
+}
+
+/* ── CSV mapping download ── */
+function downloadMappingCsv(selP,mappings,lineItems,fmap){
+  const rows=[['Product Name','Manufacturer','Category','Tier','Mapped Line Item','Formula Type','Formula Expression','Output UOM','Suggested Price']];
+  for(const p of selP){
+    const liId=mappings[p.product_id];
+    const li=liId?lineItems.find(l=>l.id===liId):null;
+    rows.push([p.product_name,p.manufacturer_norm||'',p.product_category||'',normT(fmap[p.product_id]?.family_tier||p.family_tier)||'',li?.display_name||'',li?.formula_type||'',li?.formula_expr||'',li?.output_uom||'',p.suggested_price!=null?parseFloat(p.suggested_price).toFixed(2):'']);
+  }
+  const csv=rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cpq_mapping_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
+}
+
 function Loader({msg}){return React.createElement('div',{className:'ld',style:{padding:'40px 0',justifyContent:'center'}},React.createElement('div',{className:'da'}),React.createElement('div',{className:'da'}),React.createElement('div',{className:'da'}),React.createElement('span',null,msg||'Loading…'));}
 
 function Steps({step,maxStep,setStep}){
@@ -1029,6 +1207,11 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
       React.createElement('div',{className:'map-summary-title'},
         React.createElement('span',null,'Mapping Summary — click a card to filter'),
         React.createElement('div',{className:'row',style:{gap:6}},
+          React.createElement('button',{
+            className:'btn-ico btn-sm',
+            onClick:()=>downloadMappingCsv(selP,mappings,lineItems,fmap),
+            title:'Download full mapping as CSV',
+          },'↓ CSV'),
           React.createElement('button',{className:'btn-ico btn-sm',onClick:reAutoMap,title:'Re-run auto-mapping'},'↺ Re-map'),
           React.createElement('button',{
             className:'btn-ico btn-sm',
@@ -1150,18 +1333,36 @@ function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,onNext,on
   useEffect(()=>{const t={good:[],better:[],best:[],untiered:[]};selP.forEach(p=>{const tk=normT(fmap[p.product_id]?.family_tier||p.family_tier);if(tk)t[tk].push(p);else t.untiered.push(p);});setTiers(t);},[selP,fmap]);
 
   // Roof calculations
-  const squares=Math.round((sqft/100)*10)/10; // e.g. 22.0 sq
+  const squares=Math.round((sqft/100)*10)/10;
   const pitchMult=PITCH[pitch]||1;
   const storyMult=STORY[story]||1;
 
-  // Price = rate/sq × squares × pitch multiplier × story multiplier
-  // This is the industry-standard method for presenting installed roofing costs
-  const calcPrice=tk=>{
-    const rc=RATE_CARDS[tk];
-    return Math.round(rc.rate * squares * pitchMult * storyMult / 100) * 100;
-  };
+  // Price per tier using actual product suggested_prices × UOM-aware qty estimates
+  // Falls back to industry rate card if no products have prices
+  const calcPrice=useMemo(()=>{
+    const result={};
+    ['good','better','best'].forEach(tk=>{
+      const tp=tiers[tk]||[],un=tiers.untiered||[];
+      const show=tk==='best'?[...tp,...un]:tp;
+      const allForPrice=tk==='best'?[...tp,...un]:[...tp,...(tk==='better'?un.filter(p=>normT(fmap[p.product_id]?.family_tier||p.family_tier)!=='good'):[] )];
+      
+      // Sum actual product costs using UOM-aware estimator
+      const materialCost=allForPrice.reduce((s,p)=>s+estProdCost(p,sqft,pitchMult,storyMult),0);
+      
+      if(materialCost>0){
+        // Add labor estimate (35-45% of total job is labor; material is ~55-65%)
+        // Total ≈ material / 0.60
+        const laborFactor=tk==='good'?0.60:tk==='better'?0.58:0.55;
+        const totalEst=materialCost/laborFactor;
+        result[tk]=Math.round(totalEst/100)*100;
+      }else{
+        // Fallback to rate card
+        result[tk]=Math.round(RATE_CARDS[tk].rate*squares*pitchMult*storyMult/100)*100;
+      }
+    });
+    return result;
+  },[tiers,fmap,sqft,pitchMult,storyMult,selIds]);
 
-  // Mapped formula count for this proposal
   const formulaCount=Object.keys(mappings).filter(k=>mappings[k]).length;
 
   return React.createElement('div',null,
@@ -1181,8 +1382,8 @@ function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,onNext,on
     React.createElement('div',{className:'tgrid'},
       ['good','better','best'].map(tk=>{
         const td=TM[tk],rc=RATE_CARDS[tk];
-        const price=calcPrice(tk);
-        const pricePerSq=Math.round(rc.rate*pitchMult*storyMult);
+        const price=calcPrice[tk]||Math.round(rc.rate*squares*pitchMult*storyMult/100)*100;
+        const pricePerSq=Math.round(price/squares);
         const tp=tiers[tk]||[],un=tiers.untiered||[];
         const show=tk==='best'?[...tp,...un]:tp;const mx=tk==='good'?4:tk==='better'?6:10;
         return React.createElement('div',{key:tk,className:`tc${tk==='better'?' tc-b':tk==='best'?' tc-p':''}`,},
