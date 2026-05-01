@@ -272,7 +272,35 @@ html,body{min-height:100%;background:var(--bg-page);font-family:-apple-system,Bl
 .tier-sq-count{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--txd);margin-bottom:10px}
 .tier-sq-count span{font-weight:600;color:var(--tx)}
 .tier-rate-note{font-size:10px;color:var(--txd);font-style:italic;margin-bottom:8px}
-.tab-row{display:flex;gap:2px;background:var(--bg3);border-radius:var(--r6);padding:3px;margin-bottom:16px}
+/* ── Clickable stat cards ── */
+.stat{cursor:pointer;transition:border .15s,background .15s,box-shadow .15s}
+.stat:hover{border-color:rgba(232,98,42,.4);box-shadow:0 0 0 2px rgba(232,98,42,.08)}
+.stat.stat-on{border-color:var(--or);background:rgba(232,98,42,.07);box-shadow:0 0 0 2px rgba(232,98,42,.12)}
+.stat.stat-on .stat-n{color:var(--or)!important}
+.stat.stat-on .stat-l{color:var(--or);opacity:.75}
+.stat-hint{font-size:9px;color:var(--txdd);margin-top:2px;line-height:1.3}
+
+/* ── Validate panel ── */
+.validate-panel{background:var(--bg2);border:1px solid var(--bdd);border-radius:var(--r8);padding:12px 14px;margin-top:10px}
+.validate-title{font-size:11px;font-weight:600;color:var(--tx);margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.vrow{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:11px;border-bottom:1px solid var(--bdd2)}
+.vrow:last-child{border-bottom:none}
+.vicon{flex-shrink:0;font-size:12px}
+.vprod{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tx)}
+.vli{font-size:10px;color:var(--txd);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.vtag{font-size:9px;padding:1px 6px;border-radius:3px;white-space:nowrap;flex-shrink:0}
+.vtag-ok{background:var(--ok-bg);color:var(--ok-tx);border:1px solid var(--ok-bd)}
+.vtag-warn{background:rgba(245,158,11,.1);color:var(--am);border:1px solid rgba(245,158,11,.2)}
+.vtag-err{background:var(--er-bg);color:var(--er-tx);border:1px solid var(--er-bd)}
+.vtag-reuse{background:rgba(56,189,248,.08);color:var(--bl);border:1px solid rgba(56,189,248,.2)}
+
+/* ── Read-only line item display in Step 3 ── */
+.li-readout{background:var(--bg3);border:1px solid var(--bdd);border-radius:var(--r4);padding:7px 10px;margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.li-readout-name{font-size:11px;font-weight:500;color:var(--tx)}
+.li-readout-none{font-size:11px;color:var(--txdd);font-style:italic;padding:7px 10px;margin-top:6px}
+.frow-3{display:grid;grid-template-columns:1fr 155px 140px;gap:8px;margin-bottom:6px}
+
+/* ── Step5 tab switcher ── */
 .tab-btn{flex:1;padding:7px 12px;border:none;border-radius:var(--r4);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;background:transparent;color:var(--txd)}
 .tab-btn.on{background:var(--bg);color:var(--tx);box-shadow:0 1px 5px rgba(0,0,0,.25)}
 .tab-btn.danger-tab.on{background:rgba(248,113,113,.12);color:var(--re);box-shadow:none;border:1px solid rgba(248,113,113,.22)}
@@ -348,7 +376,11 @@ const SB=supabase.createClient(
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtiZGN6emxkbXlheWxpd2Fqd21hIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzU1NzE2NCwiZXhwIjoyMDkzMTMzMTY0fQ.41AJIEniPYfhJjXIrmN21ZQ8zufpKuZZ01004ZtNj6M'
 );
 
-const BULK=50,BDLY=300,PGS=80;
+const BULK=100,   // items per bulk POST — larger batches = fewer round trips
+      BDLY=80,    // ms between bulk chunks — reduced from 300 ms
+      FALLBACK_CONC=8, // concurrent individual creates when bulk endpoint fails
+      DEL_CONC=10,     // concurrent DELETE workers
+      PGS=80;
 const REGIONS=[
   {label:'US East (us-east-1)',value:'us-east-1',url:'https://us-east-1.zuperpro.com/api/'},
   {label:'US West (us-west-1c)',value:'us-west-1c',url:'https://us-west-1c.zuperpro.com/api/'},
@@ -523,24 +555,90 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
     await chk();
     const si=ci*BULK;let ok=false;
     try{const r=await zf(`${url}products/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({products:chunk})});if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){for(let i=0;i<chunk.length;i++){const p=selProds[si+i],uid=r.j.data[i]?.product_uid;if(uid){um[p.product_id]=uid;ps++;}else pf++;pR.push({name:p.product_name,uid:uid||null,ok:!!uid});}ok=true;}}catch(e){if(e.message==='CANCELLED')throw e;log('Bulk prod error:'+e.message);}
-    if(!ok){for(let i=0;i<chunk.length;i++){const p=selProds[si+i];try{const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(chunk[i])});const uid=r.j?.data?.product_uid;if(uid){um[p.product_id]=uid;ps++;}else pf++;pR.push({name:p.product_name,uid:uid||null,ok:!!uid});}catch(e){if(e.message==='CANCELLED')throw e;pf++;pR.push({name:p.product_name,uid:null,ok:false});}}}
+    if(!ok){
+      // Bulk failed — fall back to concurrent individual creates (FALLBACK_CONC in parallel)
+      await Promise.all(Array.from({length:chunk.length},(_,i)=>
+        (async()=>{
+          const p=selProds[si+i];
+          if(sig.cancel)return;
+          try{const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(chunk[i])});const uid=r.j?.data?.product_uid;if(uid){um[p.product_id]=uid;ps++;}else pf++;pR.push({name:p.product_name,uid:uid||null,ok:!!uid});}
+          catch(e){if(e.message==='CANCELLED')throw e;pf++;pR.push({name:p.product_name,uid:null,ok:false});}
+        })()
+      ).slice(0,FALLBACK_CONC));  // cap at FALLBACK_CONC concurrent requests
+      // For chunks > FALLBACK_CONC, run remaining in windows of FALLBACK_CONC
+      if(chunk.length>FALLBACK_CONC){
+        for(let w=FALLBACK_CONC;w<chunk.length;w+=FALLBACK_CONC){
+          await Promise.all(Array.from({length:Math.min(FALLBACK_CONC,chunk.length-w)},(_,j)=>
+            (async()=>{
+              const i=w+j,p=selProds[si+i];
+              if(sig.cancel)return;
+              try{const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(chunk[i])});const uid=r.j?.data?.product_uid;if(uid){um[p.product_id]=uid;ps++;}else pf++;pR.push({name:p.product_name,uid:uid||null,ok:!!uid});}
+              catch(e){if(e.message==='CANCELLED')throw e;pf++;pR.push({name:p.product_name,uid:null,ok:false});}
+            })()
+          ));
+        }
+      }
+    }
     await slp(BDLY);
   }
   log(`Products: ${ps} created, ${pf} failed`);onPhase('products',pf===0?'done':'partial',{success:ps,failed:pf});
 
   await chk();
   onPhase('formulas','active');
-  const fR=[],fu={};let fs=0,fsk=0,ff=0;
-  const fps=[];for(const liId of[...new Set(Object.values(mappings).filter(Boolean))]){const li=lineItems.find(l=>l.id===liId);if(!li)continue;const fp=mkFormula(li,toks);if(fp)fps.push({li,fp});else fsk++;}
-  log(`Creating ${fps.length} formulas, ${fsk} skipped...`);
+  const fR=[],fu={};let fs=0,fReused=0,fsk=0,ff=0;
+
+  // ── Pre-fetch existing formulas in this account to avoid duplicates ──────
+  const existingByKey={},existingByName={};
+  try{
+    let pg=1;
+    while(true){
+      await chk();
+      const r=await zf(`${url}invoice_estimate/cpq/formulas?count=100&page=${pg}`,{headers:zh(key)});
+      const items=r.j?.data||[];
+      items.forEach(f=>{
+        if(f.formula_key&&f.formula_uid)existingByKey[f.formula_key]=f.formula_uid;
+        if(f.formula_name&&f.formula_uid)existingByName[f.formula_name]=f.formula_uid;
+      });
+      if(items.length<100)break;pg++;
+    }
+    log(`Existing formulas in account: ${Object.keys(existingByKey).length} — will skip duplicates`);
+  }catch(e){if(e.message==='CANCELLED')throw e;log('Warning: could not fetch existing formulas — may create duplicates');}
+
+  // Build list of formulas to create, reusing any that already exist
+  const fps=[];
+  for(const liId of[...new Set(Object.values(mappings).filter(Boolean))]){
+    const li=lineItems.find(l=>l.id===liId);if(!li)continue;
+    const fp=mkFormula(li,toks);
+    if(!fp){fsk++;continue;}
+    // Check if this formula already exists — reuse if so
+    const ck=fp.formula.formula_key,cn=fp.formula.formula_name;
+    const existUid=existingByKey[ck]||existingByName[cn];
+    if(existUid){
+      fu[li.id]=existUid;fReused++;
+      fR.push({name:li.display_name,uid:existUid,ok:true,reused:true});
+    }else{
+      fps.push({li,fp});
+    }
+  }
+  log(`Formulas: ${fps.length} new to create, ${fReused} reused, ${fsk} skipped...`);
   for(const[ci,chunk]of cks(fps,BULK).entries()){
     await chk();
     let ok=false;
     try{const r=await zf(`${url}invoice_estimate/cpq/formulas/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({formulas:chunk.map(x=>x.fp)})});if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){for(let i=0;i<chunk.length;i++){const{li}=chunk[i],uid=r.j.data[i]?.formula_uid;if(uid){fu[li.id]=uid;fs++;}else ff++;fR.push({name:li.display_name,uid:uid||null,ok:!!uid});}ok=true;}}catch(e){if(e.message==='CANCELLED')throw e;log('Bulk formula error:'+e.message);}
-    if(!ok){for(const{li,fp}of chunk){try{const r=await zf(`${url}invoice_estimate/cpq/formulas`,{method:'POST',headers:zh(key),body:JSON.stringify(fp)});const uid=r.j?.data?.formula_uid;if(uid){fu[li.id]=uid;fs++;}else ff++;fR.push({name:li.display_name,uid:uid||null,ok:!!uid});}catch(e){if(e.message==='CANCELLED')throw e;ff++;fR.push({name:li.display_name,uid:null,ok:false});}}}
+    if(!ok){
+      // Concurrent fallback for formulas
+      for(let w=0;w<chunk.length;w+=FALLBACK_CONC){
+        await Promise.all(chunk.slice(w,w+FALLBACK_CONC).map(async({li,fp})=>{
+          if(sig.cancel)return;
+          try{const r=await zf(`${url}invoice_estimate/cpq/formulas`,{method:'POST',headers:zh(key),body:JSON.stringify(fp)});const uid=r.j?.data?.formula_uid;if(uid){fu[li.id]=uid;fs++;}else ff++;fR.push({name:li.display_name,uid:uid||null,ok:!!uid});}
+          catch(e){if(e.message==='CANCELLED')throw e;ff++;fR.push({name:li.display_name,uid:null,ok:false});}
+        }));
+      }
+    }
     await slp(BDLY);
   }
-  log(`Formulas: ${fs} ok, ${fsk} skipped, ${ff} failed`);onPhase('formulas','done',{success:fs,skipped:fsk,failed:ff});
+  log(`Formulas: ${fs} created, ${fReused} reused, ${fsk} skipped, ${ff} failed`);
+  onPhase('formulas','done',{success:fs,reused:fReused,skipped:fsk,failed:ff});
 
   await chk();
   onPhase('packages','active');
@@ -730,10 +828,27 @@ function Step2({onNext,selIds,setSelIds,allProds,fmap,prodsLoaded,loadProgress})
   );
 
   return React.createElement('div',null,
-    // Stats
+    // ── Clickable tier stat cards ─────────────────────────────────────────
     React.createElement('div',{className:'stats'},
-      ['good','better','best'].map(tk=>React.createElement('div',{key:tk,className:'stat'},React.createElement('div',{className:'stat-n',style:{color:TM[tk].color}},tcounts[tk].toLocaleString()),React.createElement('div',{className:'stat-l'},TM[tk].label+' tier'))),
-      React.createElement('div',{className:'stat'},React.createElement('div',{className:'stat-n'},allProds.length.toLocaleString()),React.createElement('div',{className:'stat-l'},'Total products'))
+      ['good','better','best'].map(tk=>React.createElement('div',{
+        key:tk,
+        className:`stat${tierF===tk?' stat-on':''}`,
+        onClick:()=>setTierF(prev=>prev===tk?'':tk),
+        title:'Click to filter by '+TM[tk].label+' tier',
+      },
+        React.createElement('div',{className:'stat-n',style:{color:tierF===tk?undefined:TM[tk].color}},tcounts[tk].toLocaleString()),
+        React.createElement('div',{className:'stat-l'},TM[tk].label+' tier'),
+        React.createElement('div',{className:'stat-hint'},tierF===tk?'● Active filter':'Click to filter')
+      )),
+      React.createElement('div',{
+        className:`stat${!tierF?' stat-on':''}`,
+        onClick:()=>setTierF(''),
+        title:'Show all products',
+      },
+        React.createElement('div',{className:'stat-n'},allProds.length.toLocaleString()),
+        React.createElement('div',{className:'stat-l'},'All products'),
+        React.createElement('div',{className:'stat-hint'},!tierF?'● Showing all':'Click to show all')
+      )
     ),
     // Brand pills
     visPills.length>0&&React.createElement('div',{className:'bpills'},
@@ -741,8 +856,8 @@ function Step2({onNext,selIds,setSelIds,allProds,fmap,prodsLoaded,loadProgress})
       visPills.map(b=>{const cb=canonical(b);return React.createElement('span',{key:b,className:`bp${brand===cb?' on':''}`,onClick:()=>setBrand(brand===cb?'':cb)},b);}),
       brand&&!visPills.map(b=>canonical(b)).includes(brand)&&React.createElement('span',{className:'bp on'},brand)
     ),
-    // Filter row
-    React.createElement('div',{className:'frow'},
+    // Filter row — 3 cols (tier now controlled by stat cards above)
+    React.createElement('div',{className:'frow-3'},
       React.createElement('div',{className:'sw'},
         React.createElement('span',{className:'si'},'⌕'),
         React.createElement('input',{className:'inp',value:rawQ,onChange:e=>setRawQ(e.target.value),placeholder:'Search name, brand, category, product line…',autoComplete:'off',spellCheck:false}),
@@ -755,19 +870,15 @@ function Step2({onNext,selIds,setSelIds,allProds,fmap,prodsLoaded,loadProgress})
       React.createElement('select',{className:'sel',value:catF,onChange:e=>setCatF(e.target.value)},
         React.createElement('option',{value:''},'All Categories'),
         availCats.map(c=>React.createElement('option',{key:c,value:c},c))
-      ),
-      React.createElement('select',{className:'sel',value:tierF,onChange:e=>setTierF(e.target.value)},
-        React.createElement('option',{value:''},'All Tiers'),
-        [['good','Good'],['better','Better'],['best','Best']].map(([v,l])=>React.createElement('option',{key:v,value:v},l))
       )
     ),
     // Active filter chips
     React.createElement('div',{className:'fbar'},
-      !hasF&&React.createElement('span',{className:'fbar-empty'},'Showing all '+allProds.length.toLocaleString()+' products — use filters to narrow'),
+      !hasF&&React.createElement('span',{className:'fbar-empty'},'Showing all '+allProds.length.toLocaleString()+' products — click a tier card or use filters above'),
       rawQ&&React.createElement('span',{className:'fchip'},'⌕ "'+rawQ+'"',React.createElement('button',{className:'fchip-x',onClick:()=>setRawQ('')},'×')),
       brand&&React.createElement('span',{className:'fchip'},'Brand: '+brand,React.createElement('button',{className:'fchip-x',onClick:()=>setBrand('')},'×')),
       catF&&React.createElement('span',{className:'fchip'},'Category: '+catF,React.createElement('button',{className:'fchip-x',onClick:()=>setCatF('')},'×')),
-      tierF&&React.createElement('span',{className:'fchip'},'Tier: '+TM[tierF]?.label,React.createElement('button',{className:'fchip-x',onClick:()=>setTierF('')},'×')),
+      tierF&&React.createElement('span',{className:'fchip',style:{background:'rgba(232,98,42,.15)'}},TM[tierF]?.label+' tier',React.createElement('button',{className:'fchip-x',onClick:()=>setTierF('')},'×')),
       hasF&&React.createElement('button',{className:'f-clr',onClick:clearAll},'Clear all filters')
     ),
     // List meta
@@ -822,6 +933,11 @@ function Step2({onNext,selIds,setSelIds,allProds,fmap,prodsLoaded,loadProgress})
 
 function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings,onNext,onBack}){
   const[ld,sld]=useState(!lineItems.length);const[err,se]=useState('');
+  const[mapFilter,setMapFilter]=useState(null); // null | 'mapped' | 'formula' | 'direct' | 'unmapped'
+  const[validating,sValidating]=useState(false);
+  const[validation,sValidation]=useState(null);
+  const[showValidate,sShowValidate]=useState(false);
+
   useEffect(()=>{
     if(lineItems.length)return;
     (async()=>{
@@ -835,12 +951,11 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
   },[]);
 
   const selP=useMemo(()=>allProds.filter(p=>selIds.includes(p.product_id)),[allProds,selIds]);
-  const byGroup=useMemo(()=>lineItems.reduce((a,li)=>{const g=li.srs_category||'Other';(a[g]=a[g]||[]).push(li);return a;},{}),[lineItems]);
 
-  // ── Mapping summary stats ────────────────────────────────────────────────
+  // ── Summary stats ────────────────────────────────────────────────────────
   const summary=useMemo(()=>{
     let mapped=0,withFormula=0,directInput=0,notMapped=0;
-    const formulaExprs={}; // expr → count
+    const formulaExprs={};
     for(const p of selP){
       const liId=mappings[p.product_id];
       if(!liId){notMapped++;continue;}
@@ -851,78 +966,181 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
         formulaExprs[li.formula_expr]=(formulaExprs[li.formula_expr]||0)+1;
       }else{directInput++;}
     }
-    // Deduplicated unique formula expressions sorted by usage count
     const uniqueFormulas=Object.entries(formulaExprs).sort((a,b)=>b[1]-a[1]);
-    // Count how many unique formula CREATE calls will be made (one per unique expr)
-    const formulasToCreate=uniqueFormulas.length;
-    return{mapped,withFormula,directInput,notMapped,uniqueFormulas,formulasToCreate};
+    return{mapped,withFormula,directInput,notMapped,uniqueFormulas,formulasToCreate:uniqueFormulas.length};
   },[selP,mappings,lineItems]);
 
-  const reAutoMap=()=>setMappings(buildAutoMappings(selP,lineItems));
+  // ── Filtered product list driven by mapFilter ────────────────────────────
+  const filteredProds=useMemo(()=>{
+    if(!mapFilter)return selP;
+    return selP.filter(p=>{
+      const liId=mappings[p.product_id];
+      const li=liId?lineItems.find(l=>l.id===liId):null;
+      const hasF=!!(li?.formula_expr&&li.formula_type!=='direct_input');
+      if(mapFilter==='mapped')return!!liId;
+      if(mapFilter==='formula')return hasF;
+      if(mapFilter==='direct')return liId&&!hasF;
+      if(mapFilter==='unmapped')return!liId;
+      return true;
+    });
+  },[selP,mappings,lineItems,mapFilter]);
+
+  const reAutoMap=()=>{setMappings(buildAutoMappings(selP,lineItems));sValidation(null);sShowValidate(false);};
+
+  // ── Validate: compare auto-suggested mapping to current ──────────────────
+  const runValidate=async()=>{
+    sValidating(true);sShowValidate(true);
+    const suggested=buildAutoMappings(selP,lineItems);
+    const results=selP.map(p=>{
+      const curId=mappings[p.product_id];
+      const sugId=suggested[p.product_id];
+      const curLI=curId?lineItems.find(l=>l.id===curId):null;
+      const sugLI=sugId?lineItems.find(l=>l.id===sugId):null;
+      const hasF=!!(curLI?.formula_expr&&curLI.formula_type!=='direct_input');
+      let status='ok';
+      if(!curId&&!sugId)status='unmapped';
+      else if(!curId&&sugId)status='suggestion'; // new mapping available
+      else if(curId&&!sugId)status='ok'; // mapped but no suggestion = custom
+      else if(curId!==sugId)status='diff'; // current differs from suggestion
+      return{pid:p.product_id,name:p.product_name,curLI:curLI?.display_name,sugLI:sugLI?.display_name,hasFormula:hasF,formulaExpr:curLI?.formula_expr,status};
+    });
+    sValidation(results);sValidating(false);
+  };
+
+  const applyAllSuggestions=()=>{
+    const suggested=buildAutoMappings(selP,lineItems);
+    setMappings(m=>{const nm={...m};for(const[k,v]of Object.entries(suggested))nm[k]=v;return nm;});
+    sShowValidate(false);sValidation(null);
+  };
+
+  const SUMMARY_CARDS=[
+    {key:'mapped',   label:'Mapped to line item',    color:'var(--gr)',   val:summary.mapped,          hint:'Click to show only mapped'},
+    {key:'formula',  label:'With formula expression', color:'var(--bl)',   val:summary.withFormula,     hint:'Click to show formula-linked'},
+    {key:'direct',   label:'Direct input (no formula)',color:'var(--txd)', val:summary.directInput,     hint:'Click to show direct-input'},
+    {key:'unmapped', label:'Not matched',             color:'var(--am)',   val:summary.notMapped,       hint:'Click to show unmatched'},
+  ];
 
   if(ld)return React.createElement(Loader,{msg:'Loading proposal_line_items & auto-mapping…'});
   if(err&&!lineItems.length)return React.createElement('div',{className:'a-err'},err);
 
   return React.createElement('div',null,
-    // ── Mapping summary ──────────────────────────────────────────────────
+    // ── Summary panel with clickable cards ──────────────────────────────
     React.createElement('div',{className:'map-summary'},
       React.createElement('div',{className:'map-summary-title'},
-        React.createElement('span',null,'Formula & Line-Item Mapping Summary'),
-        React.createElement('button',{className:'btn-ico btn-sm',onClick:reAutoMap},'↺ Re-map')
+        React.createElement('span',null,'Mapping Summary — click a card to filter'),
+        React.createElement('div',{className:'row',style:{gap:6}},
+          React.createElement('button',{className:'btn-ico btn-sm',onClick:reAutoMap,title:'Re-run auto-mapping'},'↺ Re-map'),
+          React.createElement('button',{
+            className:'btn-ico btn-sm',
+            onClick:runValidate,
+            disabled:validating,
+            style:{borderColor:showValidate?'var(--or)':'',color:showValidate?'var(--or)':''},
+            title:'Validate current mappings against auto-mapping suggestions',
+          },validating?'…':'✓ Validate')
+        )
       ),
+      // Clickable stat cards
       React.createElement('div',{className:'map-summary-grid'},
-        React.createElement('div',{className:'ms-cell'},React.createElement('div',{className:'ms-n ok'},summary.mapped),React.createElement('div',{className:'ms-l'},'Mapped to line item')),
-        React.createElement('div',{className:'ms-cell'},React.createElement('div',{className:'ms-n info'},summary.withFormula),React.createElement('div',{className:'ms-l'},'With formula expression')),
-        React.createElement('div',{className:'ms-cell'},React.createElement('div',{className:'ms-n'},summary.directInput),React.createElement('div',{className:'ms-l'},'Direct input (no formula)')),
-        React.createElement('div',{className:'ms-cell'},React.createElement('div',{className:'ms-n',style:{color:'var(--or)'}},summary.formulasToCreate),React.createElement('div',{className:'ms-l'},'Unique formulas to create'))
+        SUMMARY_CARDS.map(sc=>React.createElement('div',{
+          key:sc.key,
+          className:`ms-cell${mapFilter===sc.key?' stat-on':''}`,
+          style:{cursor:'pointer',transition:'border .15s,background .15s'},
+          onClick:()=>setMapFilter(prev=>prev===sc.key?null:sc.key),
+          title:sc.hint,
+        },
+          React.createElement('div',{className:'ms-n',style:{color:mapFilter===sc.key?'var(--or)':sc.val===0?'var(--txdd)':sc.color}},sc.val),
+          React.createElement('div',{className:'ms-l'},sc.label),
+          React.createElement('div',{className:'stat-hint'},mapFilter===sc.key?'● Active filter':sc.hint)
+        ))
       ),
-      summary.notMapped>0&&React.createElement('div',{style:{fontSize:11,color:'var(--am)',marginBottom:8}},'⚠ '+summary.notMapped+' product(s) could not be auto-matched. Assign manually below.'),
+      // Unique formula chips
       summary.uniqueFormulas.length>0&&React.createElement('div',null,
-        React.createElement('div',{style:{fontSize:10,color:'var(--txd)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:5}},'Active formula expressions ('+summary.uniqueFormulas.length+' unique):'),
+        React.createElement('div',{style:{fontSize:10,color:'var(--txd)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:5}},
+          summary.formulasToCreate+' unique formula expression(s) to create:'
+        ),
         React.createElement('div',{className:'formula-chips'},
           summary.uniqueFormulas.map(([expr,cnt],i)=>
             React.createElement('div',{key:i,className:'formula-chip-item'},
-              React.createElement('span',null,expr.length>50?expr.slice(0,48)+'…':expr),
+              React.createElement('span',null,expr.length>52?expr.slice(0,50)+'…':expr),
               React.createElement('span',{className:'fci-count'},cnt+'×')
             )
           )
         )
+      ),
+      // Active filter indicator
+      mapFilter&&React.createElement('div',{style:{fontSize:11,color:'var(--or)',marginTop:8,display:'flex',alignItems:'center',gap:6}},
+        React.createElement('span',null,'Showing '+filteredProds.length+' of '+selP.length+' products'),
+        React.createElement('button',{className:'f-clr',style:{color:'var(--or)'},onClick:()=>setMapFilter(null)},'× Clear filter')
       )
     ),
-    // ── Per-product mapping rows ─────────────────────────────────────────
-    React.createElement('div',{className:'sbox',style:{maxHeight:330}},
-      selP.map(p=>{
-        const mid=mappings[p.product_id];
-        const li=mid?lineItems.find(l=>l.id===mid):null;
-        const tier=normT(fmap[p.product_id]?.family_tier||p.family_tier);
-        const hasFormula=!!(li?.formula_expr&&li.formula_type!=='direct_input');
-        return React.createElement('div',{key:p.product_id,className:'lir'},
-          React.createElement('div',{className:'row',style:{marginBottom:7}},
-            React.createElement('div',{style:{flex:1,minWidth:0}},
-              React.createElement('div',{style:{fontSize:12,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'var(--tx)'}},p.product_name),
-              React.createElement('div',{className:'row',style:{gap:4,marginTop:3}},
-                p.manufacturer_norm&&React.createElement('span',{className:'kpill'},p.manufacturer_norm),
-                p.product_category&&React.createElement('span',{className:'kpill'},p.product_category),
-                tier&&React.createElement('span',{className:tbc(tier)},tier.toUpperCase())
-              )
-            ),
-            mid&&React.createElement('span',{className:'li-ok',style:{background:hasFormula?'var(--ok-bg)':'var(--bg3)',color:hasFormula?'var(--ok-tx)':'var(--txd)',border:`1px solid ${hasFormula?'var(--ok-bd)':'var(--bdd)'}`}},
-              hasFormula?'✓ formula':'✓ mapped'
-            )
+
+    // ── Validation panel ────────────────────────────────────────────────
+    showValidate&&validation&&React.createElement('div',{className:'validate-panel'},
+      React.createElement('div',{className:'validate-title'},
+        '✓ Mapping Validation Results',
+        React.createElement('div',{className:'row',style:{marginLeft:'auto',gap:6}},
+          validation.some(v=>v.status==='suggestion'||v.status==='diff')&&
+            React.createElement('button',{className:'btn btn-sm',onClick:applyAllSuggestions},'Apply all suggestions'),
+          React.createElement('button',{className:'btn-g btn-sm',onClick:()=>{sShowValidate(false);sValidation(null);}},'Close')
+        )
+      ),
+      React.createElement('div',{style:{maxHeight:200,overflowY:'auto'}},
+        validation.map((v,i)=>React.createElement('div',{key:i,className:'vrow'},
+          React.createElement('span',{className:'vicon'},
+            v.status==='ok'||v.status==='custom'?'✓':v.status==='unmapped'?'✗':v.status==='suggestion'?'＋':'≠'
           ),
-          React.createElement('select',{className:'sel',style:{fontSize:11},value:mid||'',onChange:e=>setMappings(m=>({...m,[p.product_id]:e.target.value?parseInt(e.target.value):undefined}))},
-            React.createElement('option',{value:''},'— no formula (manual quantity) —'),
-            Object.entries(byGroup).map(([g,lis])=>React.createElement('optgroup',{key:g,label:g},lis.map(li=>React.createElement('option',{key:li.id,value:li.id},li.display_name+(li.is_gated?' ⚠':'')+(li.formula_expr&&li.formula_type!=='direct_input'?' [formula]':'')))))
+          React.createElement('span',{className:'vprod',title:v.name},v.name.length>30?v.name.slice(0,28)+'…':v.name),
+          React.createElement('span',{className:'vli'},
+            v.curLI?(v.hasFormula?'📐 '+v.curLI:'📋 '+v.curLI):'(unmapped)'
           ),
-          li?.formula_expr&&React.createElement('div',{style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginTop:5}},
-            React.createElement('span',{className:'fml'},li.formula_expr),
-            li.output_uom&&React.createElement('span',{className:'kpill'},li.output_uom),
-            li.is_gated&&React.createElement('span',{className:'li-gt'},'⚠ '+li.gate_question)
+          React.createElement('span',{className:`vtag ${v.status==='ok'?'vtag-ok':v.status==='unmapped'?'vtag-err':v.status==='suggestion'?'vtag-warn':'vtag-warn'}`},
+            v.status==='ok'?'✓ matched':v.status==='unmapped'?'not found':v.status==='suggestion'?'suggestion available':'differs from suggestion'
           )
-        );
-      })
+        ))
+      )
     ),
-    React.createElement('div',{className:'nav'},React.createElement('button',{className:'btn-g',onClick:onBack},'← Back'),React.createElement('button',{className:'btn',onClick:onNext},'Build Packages →'))
+
+    // ── Per-product rows — READ ONLY (no dropdown) ───────────────────────
+    React.createElement('div',{className:'sbox',style:{maxHeight:330}},
+      filteredProds.length===0
+        ?React.createElement('div',{className:'nodata'},mapFilter?'No products match this filter.':'No products selected.')
+        :filteredProds.map(p=>{
+          const liId=mappings[p.product_id];
+          const li=liId?lineItems.find(l=>l.id===liId):null;
+          const tier=normT(fmap[p.product_id]?.family_tier||p.family_tier);
+          const hasFormula=!!(li?.formula_expr&&li.formula_type!=='direct_input');
+          return React.createElement('div',{key:p.product_id,className:'lir'},
+            // Product header
+            React.createElement('div',{className:'row'},
+              React.createElement('div',{style:{flex:1,minWidth:0}},
+                React.createElement('div',{style:{fontSize:12,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'var(--tx)'}},p.product_name),
+                React.createElement('div',{className:'row',style:{gap:4,marginTop:3}},
+                  p.manufacturer_norm&&React.createElement('span',{className:'kpill'},p.manufacturer_norm),
+                  p.product_category&&React.createElement('span',{className:'kpill'},p.product_category),
+                  tier&&React.createElement('span',{className:tbc(tier)},tier.toUpperCase())
+                )
+              ),
+              liId&&React.createElement('span',{
+                className:'li-ok',
+                style:{background:hasFormula?'var(--ok-bg)':'var(--bg3)',color:hasFormula?'var(--ok-tx)':'var(--txd)',border:`1px solid ${hasFormula?'var(--ok-bd)':'var(--bdd)'}`},
+              },hasFormula?'📐 formula':'📋 mapped')
+            ),
+            // Read-only mapping display
+            liId
+              ?React.createElement('div',{className:'li-readout'},
+                  React.createElement('span',{className:'li-readout-name'},li?.display_name||'Unknown line item'),
+                  li?.output_uom&&React.createElement('span',{className:'kpill'},li.output_uom),
+                  li?.is_gated&&React.createElement('span',{className:'li-gt'},'⚠ '+li.gate_question),
+                  li?.formula_expr&&React.createElement('span',{className:'fml',style:{fontSize:10}},li.formula_expr)
+                )
+              :React.createElement('div',{className:'li-readout-none'},'Not matched to a line item — will use manual quantity')
+          );
+        })
+    ),
+    React.createElement('div',{className:'nav'},
+      React.createElement('button',{className:'btn-g',onClick:onBack},'← Back'),
+      React.createElement('button',{className:'btn',onClick:onNext},'Build Packages →')
+    )
   );
 }
 
@@ -1053,7 +1271,18 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
     sp({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:''},products:{s:'idle',l:'Create Products (Bulk)',i:''},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:''},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:''}});
     try{
       const r=await runImport({auth,selProds:selP,lineItems,mappings,tiers,signal:importSig.current,
-        onPhase:(k,s,x={})=>{const i=x.count!=null?`${x.count} tokens`:x.success!=null?`${x.success} ok${x.failed?', '+x.failed+' failed':''}${x.skipped?', '+x.skipped+' skipped':''}`:s;setPS(k,s,{i});},
+        onPhase:(k,s,x={})=>{
+          let i;
+          if(x.count!=null)i=`${x.count} tokens`;
+          else if(x.success!=null){
+            const parts=[`${x.success} created`];
+            if(x.reused)parts.push(`${x.reused} reused`);
+            if(x.failed)parts.push(`${x.failed} failed`);
+            if(x.skipped)parts.push(`${x.skipped} skipped`);
+            i=parts.join(', ');
+          }else i=s;
+          setPS(k,s,{i});
+        },
         onLog:addILog});
       sIRes(r);sIDone(true);
     }catch(e){
@@ -1118,22 +1347,37 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
     delSigs.current[k]={cancel:false,pause:false};
     updDel(k,{running:true,confirming:false,status:'running',done:0,failed:0,logs:[]});
     const sig=delSigs.current[k];
-    let done=0,failed=0;
-    for(const item of state.uids){
-      // Pause
-      while(sig.pause&&!sig.cancel)await slp(200);
-      if(sig.cancel){addDelLog(k,'⚠ Cancelled by user.','dl-info');break;}
-      const ep=deleteEndpoint(k,auth.url,item.uid);
-      try{
-        const r=await zf(ep,{method:'DELETE',headers:zh(auth.key)});
-        if(r.ok){done++;addDelLog(k,'✓ '+item.name,'dl-ok');}
-        else{failed++;addDelLog(k,'✗ '+item.name+' — '+(r.j?.message||r.status),'dl-fail');}
-      }catch(e){failed++;addDelLog(k,'✗ '+item.name+' — '+e.message,'dl-fail');}
-      updDel(k,{done,failed});
-      await slp(120);
+    const uids=state.uids;
+
+    // Shared counters — safe since JS is single-threaded between awaits
+    let done=0,failed=0,nextIdx=0;
+
+    // Worker: each grabs the next item via nextIdx and deletes it
+    async function delWorker(){
+      while(true){
+        while(sig.pause&&!sig.cancel)await slp(200);
+        if(sig.cancel)return;
+        const i=nextIdx++;
+        if(i>=uids.length)return;
+        const item=uids[i];
+        const ep=deleteEndpoint(k,auth.url,item.uid);
+        try{
+          const r=await zf(ep,{method:'DELETE',headers:zh(auth.key)});
+          if(r.ok){done++;addDelLog(k,'✓ '+item.name,'dl-ok');}
+          else{failed++;addDelLog(k,'✗ '+item.name+' — '+(r.j?.message||r.status),'dl-fail');}
+        }catch(e){failed++;addDelLog(k,'✗ '+item.name+' — '+e.message,'dl-fail');}
+        updDel(k,{done,failed});
+      }
     }
-    updDel(k,{running:false,paused:false,status:failed===0?'done':'partial'});
-    addDelLog(k,`Finished: ${done} deleted, ${failed} failed.`,failed===0?'dl-ok':'dl-info');
+
+    // Spin up DEL_CONC workers — they race through the uid list in parallel
+    const pool=[];
+    for(let w=0;w<Math.min(DEL_CONC,uids.length);w++)pool.push(delWorker());
+    await Promise.all(pool);
+
+    if(sig.cancel)addDelLog(k,'⚠ Cancelled after '+done+' deletions.','dl-info');
+    updDel(k,{running:false,paused:false,status:sig.cancel?'partial':failed===0?'done':'partial'});
+    if(!sig.cancel)addDelLog(k,'Finished: '+done+' deleted, '+failed+' failed.',failed===0?'dl-ok':'dl-info');
   };
 
   /* ── Render helpers ── */
