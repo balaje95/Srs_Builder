@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Zuper CPQ Builder</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+/* ── Dark theme ── */
+:root,[data-theme="dark"]{
+  --bg-page:#0a1520;
+  --bg:#0f1e2e;--bg2:#162436;--bg3:#1e3347;--bg4:#253d57;
+  --tx:#e5e0df;--txd:#7a99af;--txdd:#2e4558;
+  --bd:rgba(232,98,42,.22);
+  --bdd:rgba(255,255,255,.09);--bdd2:rgba(255,255,255,.045);
+  --inp-bg:#162436;--inp-bd:rgba(255,255,255,.12);
+  --scrl:#253d57;--shadow:0 4px 28px rgba(0,0,0,.55);
+  --hvr:rgba(255,255,255,.04);
+  --sel-bg:rgba(232,98,42,.09);--sel-bd:rgba(232,98,42,.4);
+  --pill-bg:#1e3347;--pill-bd:rgba(255,255,255,.1);--pill-tx:#7a99af;
+  --pill-a-bg:rgba(232,98,42,.18);--pill-a-bd:rgba(232,98,42,.5);--pill-a-tx:#fb923c;
+  --stat-bg:#162436;--phase-bg:#162436;
+  --chip-bg:#1e3347;--chip-bd:rgba(34,197,94,.3);
+  --tm-g:rgba(34,197,94,.07);--tm-g-bd:rgba(34,197,94,.2);--tm-g-tx:#22c55e;
+  --tm-b:rgba(232,98,42,.08);--tm-b-bd:rgba(232,98,42,.22);--tm-b-tx:#fb923c;
+  --tm-p:rgba(167,139,250,.07);--tm-p-bd:rgba(167,139,250,.2);--tm-p-tx:#a78bfa;
+  --ok-bg:rgba(34,197,94,.09);--ok-bd:rgba(34,197,94,.25);--ok-tx:#22c55e;
+  --er-bg:rgba(248,113,113,.07);--er-bd:rgba(248,113,113,.2);--er-tx:#f87171;
+  --hl-bg:rgba(232,98,42,.3);--hl-tx:#ffb89a;
+}
+
+/* ── Light theme ── */
+[data-theme="light"]{
+  --bg-page:#e8eef6;
+  --bg:#ffffff;--bg2:#f4f7fb;--bg3:#eaeef5;--bg4:#dce4f0;
+  --tx:#1a2535;--txd:#536070;--txdd:#b8c6d0;
+  --bd:rgba(232,98,42,.28);
+  --bdd:rgba(0,0,0,.1);--bdd2:rgba(0,0,0,.055);
+  --inp-bg:#ffffff;--inp-bd:rgba(0,0,0,.18);
+  --scrl:#c5d0de;--shadow:0 2px 20px rgba(0,0,0,.1);
+  --hvr:rgba(0,0,0,.03);
+  --sel-bg:rgba(232,98,42,.06);--sel-bd:rgba(232,98,42,.4);
+  --pill-bg:#eaeef5;--pill-bd:rgba(0,0,0,.14);--pill-tx:#536070;
+  --pill-a-bg:rgba(232,98,42,.1);--pill-a-bd:rgba(232,98,42,.45);--pill-a-tx:#c84f1e;
+  --stat-bg:#f4f7fb;--phase-bg:#f4f7fb;
+  --chip-bg:#eaeef5;--chip-bd:rgba(34,197,94,.4);
+  --tm-g:rgba(34,197,94,.07);--tm-g-bd:rgba(34,197,94,.3);--tm-g-tx:#16a34a;
+  --tm-b:rgba(232,98,42,.07);--tm-b-bd:rgba(232,98,42,.28);--tm-b-tx:#c84f1e;
+  --tm-p:rgba(139,92,246,.07);--tm-p-bd:rgba(139,92,246,.25);--tm-p-tx:#7c3aed;
+  --ok-bg:rgba(34,197,94,.07);--ok-bd:rgba(34,197,94,.3);--ok-tx:#16a34a;
+  --er-bg:rgba(239,68,68,.07);--er-bd:rgba(239,68,68,.25);--er-tx:#dc2626;
+  --hl-bg:rgba(232,98,42,.22);--hl-tx:#92300a;
+}
+
+/* ── Brand accent (always fixed) ── */
+:root{
+  --or:#e8622a;--or2:#c84f1e;--or3:rgba(232,98,42,.14);
+  --gr:#22c55e;--am:#f59e0b;--re:#f87171;--pu:#a78bfa;--bl:#38bdf8;
+  --r4:4px;--r6:6px;--r8:8px;--r10:10px;--r12:12px;
+}
+
+html,body{min-height:100%;background:var(--bg-page);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:var(--tx);font-size:14px;line-height:1.5;transition:background .22s,color .18s}
+.app{max-width:1100px;margin:0 auto;padding:16px}
+.card{background:var(--bg);border:1px solid var(--bdd);border-radius:var(--r12);overflow:hidden;box-shadow:var(--shadow);transition:background .22s,border-color .18s}
+
+/* Header */
+.hd{background:var(--bg2);border-bottom:1px solid var(--bd);padding:11px 18px;display:flex;align-items:center;gap:10px}
+.logo{background:var(--or);color:#fff;font-size:10px;font-weight:700;padding:3px 9px;border-radius:3px;letter-spacing:.06em;flex-shrink:0;user-select:none}
+.hd-t{font-size:12px;color:var(--txd);flex:1}
+.acc-chip{display:flex;align-items:center;gap:5px;background:var(--ok-bg);border:1px solid var(--ok-bd);border-radius:20px;padding:3px 10px;flex-shrink:0}
+.acc-dot{width:6px;height:6px;border-radius:50%;background:var(--gr);flex-shrink:0}
+.acc-nm{font-size:11px;color:var(--ok-tx);white-space:nowrap;font-weight:500}
+.theme-btn{background:var(--bg3);border:1px solid var(--bdd);border-radius:20px;padding:4px 12px;font-size:12px;cursor:pointer;color:var(--txd);transition:all .2s;flex-shrink:0;white-space:nowrap}
+.theme-btn:hover{border-color:var(--or);color:var(--or);background:var(--bg4)}
+
+/* Steps */
+.steps{display:flex;background:var(--bg2);border-bottom:1px solid var(--bdd)}
+.step{flex:1;display:flex;align-items:center;gap:7px;padding:10px 13px;font-size:11px;color:var(--txd);border-right:1px solid var(--bdd);cursor:pointer;user-select:none;transition:background .15s;overflow:hidden}
+.step:last-child{border-right:none}
+.step.on{background:var(--bg3);color:var(--tx)}
+.step.done{color:var(--ok-tx)}
+.step.done:hover{background:var(--bg3)}
+.step.lk{cursor:default;opacity:.4;pointer-events:none}
+.sn{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;background:var(--bg3);border:1px solid var(--bdd);flex-shrink:0;transition:all .15s}
+.step.on .sn{background:var(--or);border-color:var(--or);color:#fff}
+.step.done .sn{background:var(--gr);border-color:var(--gr);color:#fff}
+
+/* Body */
+.body{padding:20px;min-height:500px}
+.lbl{font-size:10px;color:var(--txd);text-transform:uppercase;letter-spacing:.08em;margin-bottom:5px}
+.hint{font-size:12px;color:var(--txd);line-height:1.6}
+.dv{height:1px;background:var(--bdd);margin:10px 0}
+
+/* Inputs */
+.inp{width:100%;background:var(--inp-bg);border:1px solid var(--inp-bd);color:var(--tx);border-radius:var(--r6);padding:8px 11px;font-size:13px;outline:none;transition:border .15s,background .15s}
+.inp:focus{border-color:var(--or)}
+.inp::placeholder{color:var(--txdd)}
+.sel{width:100%;background:var(--inp-bg);border:1px solid var(--inp-bd);color:var(--tx);border-radius:var(--r6);padding:8px 11px;font-size:13px;outline:none;cursor:pointer;transition:border .15s}
+.sel:focus{border-color:var(--or)}
+.sel option{background:var(--inp-bg);color:var(--tx)}
+.pw-wr{position:relative}
+.pw-wr .inp{padding-right:44px}
+.pw-eye{position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--txd);cursor:pointer;font-size:11px;padding:2px;transition:color .15s}
+.pw-eye:hover{color:var(--or)}
+
+/* Buttons */
+.btn{background:var(--or);color:#fff;border:none;border-radius:var(--r6);padding:8px 16px;font-size:12px;font-weight:500;cursor:pointer;transition:background .15s;white-space:nowrap}
+.btn:hover{background:var(--or2)}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+.btn-g{background:transparent;color:var(--txd);border:1px solid var(--bdd);border-radius:var(--r6);padding:8px 14px;font-size:12px;cursor:pointer;transition:all .15s;white-space:nowrap}
+.btn-g:hover{border-color:var(--or);color:var(--or)}
+.btn-g:disabled{opacity:.4;cursor:not-allowed}
+.btn-sm{padding:4px 9px!important;font-size:11px!important}
+.btn-ico{background:var(--bg3);border:1px solid var(--bdd);color:var(--txd);border-radius:var(--r4);padding:4px 9px;font-size:11px;cursor:pointer;transition:all .12s}
+.btn-ico:hover{border-color:var(--or);color:var(--or)}
+
+/* Nav bar */
+.nav{display:flex;justify-content:space-between;align-items:center;margin-top:18px;padding-top:14px;border-top:1px solid var(--bdd)}
+.nav-i{font-size:11px;color:var(--txd)}
+
+/* Tags/badges */
+.tag{font-size:10px;background:var(--or3);color:var(--or);border:1px solid rgba(232,98,42,.3);border-radius:3px;padding:1px 7px}
+.badge{font-size:9px;font-weight:600;border-radius:3px;padding:1px 6px;letter-spacing:.04em}
+.bg-good{background:rgba(34,197,94,.1);color:var(--tm-g-tx);border:1px solid var(--tm-g-bd)}
+.bg-better{background:rgba(232,98,42,.1);color:var(--tm-b-tx);border:1px solid var(--tm-b-bd)}
+.bg-best{background:rgba(167,139,250,.1);color:var(--tm-p-tx);border:1px solid var(--tm-p-bd)}
+.bg-std{background:rgba(56,189,248,.08);color:var(--bl);border:1px solid rgba(56,189,248,.2)}
+.kpill{font-size:10px;background:var(--pill-bg);border:1px solid var(--pill-bd);border-radius:3px;padding:1px 6px;color:var(--pill-tx)}
+
+/* Alerts */
+.a-ok{padding:8px 12px;background:var(--ok-bg);border:1px solid var(--ok-bd);border-radius:var(--r6);font-size:12px;color:var(--ok-tx)}
+.a-err{padding:8px 12px;background:var(--er-bg);border:1px solid var(--er-bd);border-radius:var(--r6);font-size:12px;color:var(--er-tx);margin-top:8px}
+
+/* Helpers */
+.row{display:flex;gap:8px;align-items:center}
+.nodata{text-align:center;padding:40px;color:var(--txd);font-size:13px}
+
+/* Stats */
+.stats{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.stat{flex:1;min-width:80px;background:var(--stat-bg);border:1px solid var(--bdd);border-radius:var(--r8);padding:9px 10px;text-align:center}
+.stat-n{font-size:20px;font-weight:500;color:var(--or)}
+.stat-l{font-size:10px;color:var(--txd);margin-top:1px}
+
+/* Brand pills */
+.bpills{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px;align-items:center}
+.bp-lbl{font-size:10px;color:var(--txd);white-space:nowrap;flex-shrink:0}
+.bp{font-size:11px;background:var(--pill-bg);border:1px solid var(--pill-bd);border-radius:20px;padding:3px 10px;color:var(--pill-tx);cursor:pointer;transition:all .15s;white-space:nowrap;user-select:none}
+.bp:hover{border-color:var(--or);color:var(--or)}
+.bp.on{background:var(--pill-a-bg);border-color:var(--pill-a-bd);color:var(--pill-a-tx);font-weight:500}
+
+/* Filter row */
+.frow{display:grid;grid-template-columns:1fr 155px 140px 110px;gap:8px;margin-bottom:6px}
+.sw{position:relative}
+.sw .inp{padding-left:32px;padding-right:36px}
+.si{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txd);font-size:15px;pointer-events:none;line-height:1}
+.scl{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:var(--bg3);border:1px solid var(--bdd);border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;color:var(--txd);display:flex;align-items:center;justify-content:center;transition:all .15s;line-height:1}
+.scl:hover{background:var(--or);border-color:var(--or);color:#fff}
+
+/* Active filter chips */
+.fbar{display:flex;align-items:center;gap:5px;min-height:28px;margin-bottom:6px;flex-wrap:wrap}
+.fchip{display:inline-flex;align-items:center;gap:4px;background:var(--pill-a-bg);border:1px solid var(--pill-a-bd);color:var(--pill-a-tx);border-radius:20px;padding:2px 8px 2px 9px;font-size:11px}
+.fchip-x{background:none;border:none;cursor:pointer;color:inherit;font-size:13px;line-height:1;padding:0;opacity:.7}
+.fchip-x:hover{opacity:1}
+.f-clr{font-size:11px;color:var(--txd);cursor:pointer;background:none;border:none;padding:0;text-decoration:underline;text-underline-offset:2px}
+.f-clr:hover{color:var(--or)}
+.fbar-empty{font-size:11px;color:var(--txdd)}
+
+/* Product list */
+.pmeta{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.pmeta-t{font-size:11px;color:var(--txd)}
+.sbox{border:1px solid var(--bdd);border-radius:var(--r8);overflow-y:auto;max-height:305px}
+.sbox::-webkit-scrollbar{width:4px}
+.sbox::-webkit-scrollbar-thumb{background:var(--scrl);border-radius:2px}
+.prow{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid var(--bdd2);cursor:pointer;transition:background .1s}
+.prow:last-child{border-bottom:none}
+.prow:hover{background:var(--hvr)}
+.prow.on{background:var(--sel-bg)}
+.pck{width:15px;height:15px;border:1.5px solid var(--bdd);border-radius:3px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;transition:all .12s}
+.prow.on .pck{background:var(--or);border-color:var(--or)}
+.pn{font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:2px;color:var(--tx)}
+.hl{background:var(--hl-bg);color:var(--hl-tx);border-radius:2px;padding:0 1px}
+.ptags{display:flex;gap:4px;flex-wrap:nowrap;overflow:hidden}
+.ppr{font-size:12px;font-weight:500;color:var(--or);white-space:nowrap;flex-shrink:0;margin-left:8px}
+
+/* Pagination */
+.pg{display:flex;align-items:center;justify-content:center;gap:5px;margin-top:8px;padding-top:8px;border-top:1px solid var(--bdd)}
+.pg-n{font-size:11px;color:var(--txd);min-width:64px;text-align:center}
+
+/* Progress */
+.pw-bar{height:4px;background:var(--bg3);border-radius:2px;overflow:hidden;margin:6px 0}
+.pb{height:100%;background:linear-gradient(90deg,var(--or),#f97316);border-radius:2px;transition:width .4s}
+
+/* Line items */
+.lir{padding:11px 13px;border-bottom:1px solid var(--bdd2)}
+.lir:last-child{border-bottom:none}
+.li-ok{font-size:10px;color:var(--ok-tx);background:var(--ok-bg);border:1px solid var(--ok-bd);border-radius:3px;padding:1px 6px;margin-left:auto;flex-shrink:0}
+.li-gt{font-size:10px;color:var(--am);background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.2);border-radius:3px;padding:1px 6px}
+.fml{font-size:10px;color:var(--or);font-family:monospace;background:var(--or3);padding:2px 7px;border-radius:3px;display:inline-block;word-break:break-all}
+
+/* Tier cards */
+.tgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.tc{background:var(--bg2);border:1.5px solid var(--bdd);border-radius:var(--r10);padding:15px;display:flex;flex-direction:column;position:relative;transition:border .2s,background .2s}
+.tc-b{border-color:var(--or)!important}
+.tc-p{border-color:rgba(167,139,250,.45)!important}
+.tbdg{position:absolute;top:-10px;left:50%;transform:translateX(-50%);font-size:10px;padding:2px 10px;border-radius:10px;white-space:nowrap;font-weight:600;color:#fff}
+.tnm{font-size:10px;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
+.tpr{font-size:24px;font-weight:500;margin:4px 0 2px}
+.tsb{font-size:11px;color:var(--txd);margin-bottom:10px}
+.tw{font-size:10px;padding:4px 8px;border-radius:5px;margin-bottom:10px;line-height:1.5}
+.tw-g{background:var(--tm-g);color:var(--tm-g-tx);border:1px solid var(--tm-g-bd)}
+.tw-b{background:var(--tm-b);color:var(--tm-b-tx);border:1px solid var(--tm-b-bd)}
+.tw-p{background:var(--tm-p);color:var(--tm-p-tx);border:1px solid var(--tm-p-bd)}
+.tds{font-size:11px;color:var(--txd);margin-bottom:10px;line-height:1.5}
+.tf{font-size:11px;color:var(--txd);padding:4px 0;border-bottom:1px solid var(--bdd2);display:flex;align-items:flex-start;gap:5px}
+.tf:last-of-type{border-bottom:none}
+.tpi{border-top:1px solid var(--bdd);padding-top:8px;margin-top:8px}
+.tpi-r{display:flex;align-items:center;gap:5px;padding:2px 0;font-size:10px;color:var(--txd)}
+.tbtn{margin-top:auto;padding-top:12px;width:100%;font-size:12px}
+
+/* Sqft bar */
+.sqbar{display:flex;align-items:center;gap:10px;background:var(--bg2);padding:10px 14px;border-radius:var(--r8);border:1px solid var(--bdd);margin-bottom:14px;flex-wrap:wrap}
+.sqbar label{font-size:11px;color:var(--txd);white-space:nowrap}
+.sqbar .inp{width:88px;text-align:center;padding:5px 8px}
+.sqbar .sel{width:auto}
+
+/* Import */
+.iphase{background:var(--phase-bg);border:1px solid var(--bdd);border-radius:var(--r8);padding:12px;margin-bottom:8px}
+.phdr{display:flex;align-items:center;gap:10px}
+.pnum{width:22px;height:22px;border-radius:50%;background:var(--bg3);border:1px solid var(--bdd);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s}
+.pnum.act{background:var(--or);border-color:var(--or);color:#fff}
+.pnum.dn{background:var(--gr);border-color:var(--gr);color:#fff}
+.ptit{font-size:13px;font-weight:500;flex:1;color:var(--tx)}
+.pst{font-size:11px}
+.rrow{display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11px;border-bottom:1px solid var(--bdd2)}
+.rrow:last-child{border-bottom:none}
+.rok{color:var(--gr)}
+.rfail{color:var(--re)}
+
+/* Auth chip */
+.ach{background:var(--chip-bg);border:1px solid var(--chip-bd);border-radius:var(--r8);padding:12px 14px;display:flex;align-items:center;gap:10px;margin-top:14px}
+.adot{width:7px;height:7px;border-radius:50%;background:var(--gr);flex-shrink:0}
+
+/* Loader */
+.ld{display:flex;align-items:center;gap:6px;color:var(--txd);font-size:12px}
+.da{width:5px;height:5px;background:var(--or);border-radius:50%;animation:pp 1s infinite}
+.da:nth-child(2){animation-delay:.2s}
+.da:nth-child(3){animation-delay:.4s}
+@keyframes pp{0%,100%{opacity:.3}50%{opacity:1}}
+
+/* ── Internal tool banner ── */
+.internal-banner{width:100%;max-width:1100px;margin:0 auto 10px;display:flex;align-items:center;gap:8px;padding:7px 14px;background:rgba(232,98,42,.08);border:1px solid rgba(232,98,42,.2);border-radius:var(--r6);font-size:11px;color:var(--or);font-weight:500}
+.internal-banner svg{flex-shrink:0}
+
+/* ── Mapping summary panel ── */
+.map-summary{background:var(--bg2);border:1px solid var(--bdd);border-radius:var(--r8);padding:12px 14px;margin-bottom:12px}
+.map-summary-title{font-size:10px;color:var(--txd);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+.map-summary-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:10px}
+.ms-cell{background:var(--bg3);border:1px solid var(--bdd);border-radius:var(--r6);padding:8px 10px;text-align:center}
+.ms-n{font-size:18px;font-weight:600;color:var(--tx)}
+.ms-n.ok{color:var(--gr)}
+.ms-n.warn{color:var(--am)}
+.ms-n.info{color:var(--bl)}
+.ms-l{font-size:10px;color:var(--txd);margin-top:2px;line-height:1.3}
+.formula-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.formula-chip-item{font-size:10px;background:var(--or3);border:1px solid rgba(232,98,42,.22);color:var(--or);border-radius:4px;padding:2px 8px;font-family:monospace;display:flex;align-items:center;gap:5px}
+.fci-count{background:rgba(232,98,42,.2);border-radius:3px;padding:0 4px;font-size:9px;font-weight:700}
+
+/* ── Tier price breakdown ── */
+.tier-price-row{display:flex;align-items:baseline;gap:6px;margin:4px 0 2px}
+.tier-price-sq{font-size:13px;color:var(--txd);font-weight:400}
+.tier-sq-count{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--txd);margin-bottom:10px}
+.tier-sq-count span{font-weight:600;color:var(--tx)}
+.tier-rate-note{font-size:10px;color:var(--txd);font-style:italic;margin-bottom:8px}
+.tab-row{display:flex;gap:2px;background:var(--bg3);border-radius:var(--r6);padding:3px;margin-bottom:16px}
+.tab-btn{flex:1;padding:7px 12px;border:none;border-radius:var(--r4);font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;background:transparent;color:var(--txd)}
+.tab-btn.on{background:var(--bg);color:var(--tx);box-shadow:0 1px 5px rgba(0,0,0,.25)}
+.tab-btn.danger-tab.on{background:rgba(248,113,113,.12);color:var(--re);box-shadow:none;border:1px solid rgba(248,113,113,.22)}
+
+/* ── Run controls (pause / cancel) ── */
+.run-ctrls{display:flex;gap:6px;margin-top:10px;align-items:center;flex-wrap:wrap}
+.run-ctrls-label{font-size:10px;color:var(--txd);text-transform:uppercase;letter-spacing:.07em;margin-right:2px}
+.pause-btn{background:var(--bg3);border:1px solid var(--bdd);border-radius:var(--r4);padding:5px 12px;font-size:11px;font-weight:500;cursor:pointer;color:var(--txd);transition:all .15s;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.pause-btn:hover{border-color:var(--am);color:var(--am)}
+.pause-btn.paused-state{background:rgba(245,158,11,.1);border-color:var(--am);color:var(--am)}
+.cancel-btn2{background:var(--bg3);border:1px solid var(--bdd);border-radius:var(--r4);padding:5px 12px;font-size:11px;font-weight:500;cursor:pointer;color:var(--txd);transition:all .15s;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.cancel-btn2:hover{border-color:var(--re);color:var(--re)}
+
+/* ── Deletion cards ── */
+.del-warn-banner{background:rgba(248,113,113,.07);border:1px solid rgba(248,113,113,.22);border-radius:var(--r8);padding:10px 13px;margin-bottom:14px;display:flex;align-items:flex-start;gap:8px;font-size:12px;color:var(--er-tx);line-height:1.5}
+.del-warn-banner svg{flex-shrink:0;margin-top:1px}
+.del-card{background:var(--phase-bg);border:1px solid var(--bdd);border-radius:var(--r8);margin-bottom:10px;overflow:hidden;transition:border .2s}
+.del-card.del-running{border-color:rgba(248,113,113,.35)}
+.del-card.del-done{border-color:var(--ok-bd)}
+.del-card-hd{display:flex;align-items:center;gap:10px;padding:12px 14px}
+.del-icon{width:32px;height:32px;border-radius:var(--r6);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:15px;font-weight:700}
+.di-prod{background:rgba(56,189,248,.1);color:var(--bl)}
+.di-form{background:rgba(167,139,250,.1);color:var(--pu)}
+.di-pkg{background:rgba(245,158,11,.1);color:var(--am)}
+.del-title{font-size:13px;font-weight:500;color:var(--tx)}
+.del-sub{font-size:11px;color:var(--txd);margin-top:1px}
+.del-card-body{padding:0 14px 13px}
+.del-prog-wrap{height:3px;background:var(--bg3);border-radius:2px;overflow:hidden;margin:6px 0 8px}
+.del-prog{height:100%;border-radius:2px;transition:width .35s}
+.del-prog.dp-run{background:linear-gradient(90deg,#f87171,#fca5a5)}
+.del-prog.dp-done{background:var(--gr)}
+.del-stats-row{display:flex;gap:14px;margin-bottom:6px;flex-wrap:wrap}
+.del-st{font-size:11px;color:var(--txd)}
+.del-st b{color:var(--tx);font-weight:600}
+.del-st.ok b{color:var(--gr)}
+.del-st.fail b{color:var(--re)}
+.del-log{max-height:90px;overflow-y:auto;font-family:monospace;font-size:10px;color:var(--txd);line-height:1.7;background:var(--inp-bg);border:1px solid var(--bdd);border-radius:var(--r4);padding:6px 8px;margin-top:6px}
+.del-log::-webkit-scrollbar{width:3px}
+.del-log::-webkit-scrollbar-thumb{background:var(--scrl);border-radius:2px}
+.dl-ok{color:var(--gr)}
+.dl-fail{color:var(--re)}
+.dl-info{color:var(--txd)}
+.del-btn-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px}
+.del-start-btn{background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.3);color:var(--re);border-radius:var(--r4);padding:5px 13px;font-size:11px;font-weight:500;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.del-start-btn:hover{background:rgba(248,113,113,.2);border-color:var(--re)}
+.del-start-btn:disabled{opacity:.4;cursor:not-allowed}
+.del-confirm-area{display:flex;align-items:center;gap:8px;background:rgba(248,113,113,.05);border:1px solid rgba(248,113,113,.18);border-radius:var(--r6);padding:8px 12px;margin-bottom:8px;font-size:12px;color:var(--er-tx)}
+.del-confirm-yes{background:var(--re);color:#fff;border:none;border-radius:var(--r4);padding:4px 12px;font-size:11px;font-weight:500;cursor:pointer}
+.del-confirm-no{background:transparent;border:1px solid var(--bdd);color:var(--txd);border-radius:var(--r4);padding:4px 12px;font-size:11px;cursor:pointer}
+.del-confirm-no:hover{border-color:var(--or);color:var(--or)}
+.del-count-badge{background:var(--bg4);border:1px solid var(--bdd);border-radius:3px;padding:1px 7px;font-size:10px;color:var(--txd);font-weight:600}
+.del-count-badge.has-items{color:var(--re);background:rgba(248,113,113,.1);border-color:rgba(248,113,113,.25)}
+
+@media(max-width:720px){
+  .tgrid{grid-template-columns:1fr}
+  .frow{grid-template-columns:1fr 1fr}
+  .stats{flex-wrap:wrap}
+  .step span:not(.sn){display:none}
+}
+</style>
+</head>
+<body>
+<div class="app"><div id="root"></div></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+<script>
+'use strict';
+const {useState,useEffect,useMemo,useCallback,useRef}=React;
+
+const SB=supabase.createClient(
+  'https://kbdczzldmyayliwajwma.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtiZGN6emxkbXlheWxpd2Fqd21hIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3NzU1NzE2NCwiZXhwIjoyMDkzMTMzMTY0fQ.41AJIEniPYfhJjXIrmN21ZQ8zufpKuZZ01004ZtNj6M'
+);
+
+const BULK=50,BDLY=300,PGS=80;
+const REGIONS=[
+  {label:'US East (us-east-1)',value:'us-east-1',url:'https://us-east-1.zuperpro.com/api/'},
+  {label:'US West (us-west-1c)',value:'us-west-1c',url:'https://us-west-1c.zuperpro.com/api/'},
+  {label:'Staging',value:'staging',url:'https://staging.zuperpro.com/api/'},
+];
+const Q_BRANDS=['GAF','Owens Corning','CertainTeed','Atlas'];
+const TM={
+  good:{label:'Good',sub:'Essential Protection',color:'var(--tm-g-tx)',warrC:'tw-g',warr:'5-yr workmanship · Mfr. standard',
+    desc:'Entry-level system meeting all code requirements. Reliable protection with standard materials.',
+    btn:{background:'transparent',border:'1px solid var(--tm-g-bd)',color:'var(--tm-g-tx)'},
+    feats:['Full tear-off & haul-away','Code-minimum ice & water at eaves','Basic pipe boot replacements','Worksite cleanup & inspection','5-yr workmanship warranty']},
+  better:{label:'Better',sub:'Superior Shield',color:'var(--or)',warrC:'tw-b',badge:'Most Popular',badgeBg:'var(--or)',warr:'10-yr workmanship · 30-yr mfr.',
+    desc:'Most popular. Full system upgrade with premium underlayment, ridge vents, and enhanced warranty.',
+    btn:{background:'var(--or)',border:'1px solid var(--or)',color:'#fff'},
+    feats:['Full tear-off & haul-away','Ice & water — eaves & valleys','Ridge vent balanced ventilation','Upgraded pipe boots','Starter strip shingles','Hip & ridge cap shingles','10-yr workmanship warranty']},
+  best:{label:'Best',sub:'Elite System',color:'var(--tm-p-tx)',warrC:'tw-p',badge:'Premium',badgeBg:'rgba(130,90,240,.85)',warr:'10-yr workmanship · Lifetime mfr.',
+    desc:'Maximum protection. Premium products, full I&W coverage, balanced ventilation, and attic inspection.',
+    btn:{background:'var(--tm-p)',border:'1px solid var(--tm-p-bd)',color:'var(--tm-p-tx)'},
+    feats:['Full tear-off & haul-away','I&W — full coverage (hips, eaves, valleys)','Full ridge + intake vent balance','Attic moisture inspection','Color-matched drip edge','Premium pipe boots','Dedicated project manager','10-yr labor + lifetime mfr. warranty']},
+};
+// Industry-standard installed rate cards ($/sq, all-in material + labor)
+// Source: 2024 US national averages — adjust per market
+const RATE_CARDS={
+  good:  {rate:290, range:'$260–$320/sq', note:'Economy shingles + standard labor'},
+  better:{rate:430, range:'$390–$470/sq', note:'Architectural shingles + upgraded system'},
+  best:  {rate:615, range:'$560–$680/sq', note:'Premium system + full coverage'},
+};
+const PITCH={low:.9,standard:1,steep:1.15,'very-steep':1.30},STORY={'1':1,'2':1.10,'3':1.22};
+
+/* helpers */
+function normT(t){
+  if(!t)return null;const v=t.toLowerCase().trim();
+  if(v.includes('good')||v==='standard'||v==='basic'||v==='economy'||v==='1')return'good';
+  if(v.includes('better')||v==='mid'||v==='plus'||v==='2')return'better';
+  if(v.includes('best')||v==='premium'||v==='elite'||v==='3'||v==='top')return'best';
+  return null;
+}
+function tbc(t){return{good:'badge bg-good',better:'badge bg-better',best:'badge bg-best'}[t]||'badge bg-std';}
+function uom(u){if(!u)return'';let v=u;if(typeof v==='string'){try{v=JSON.parse(v);}catch{return String(v);}}if(Array.isArray(v)&&v.length)return v[0]?.uom||v[0]?.unit||String(v[0])||'';if(v&&typeof v==='object')return v.uom||v.unit||Object.values(v)[0]||'';return'';}
+function n(s){return(s||'').toLowerCase().trim();}
+function zh(k){return{'x-api-key':k,'Content-Type':'application/json'};}
+function slp(ms){return new Promise(r=>setTimeout(r,ms));}
+function cks(a,sz){const o=[];for(let i=0;i<a.length;i+=sz)o.push(a.slice(i,i+sz));return o;}
+async function zf(url,opts={}){const r=await fetch(url,opts);let j;try{j=await r.json();}catch{j={};}return{ok:r.ok,status:r.status,j};}
+
+function useDb(v,d){const[dv,s]=useState(v);useEffect(()=>{const t=setTimeout(()=>s(v),d);return()=>clearTimeout(t);},[v,d]);return dv;}
+
+/* highlight component */
+function Hl({text,toks}){
+  if(!toks||!toks.length||!text)return React.createElement('span',null,text||'');
+  let parts=[text];
+  for(const tok of toks){
+    if(!tok||tok.length<2)continue;
+    const next=[];
+    for(const part of parts){
+      if(typeof part!=='string'){next.push(part);continue;}
+      const lo=part.toLowerCase();let idx=0,out=[];
+      while(true){
+        const fi=lo.indexOf(tok,idx);
+        if(fi===-1){out.push(part.slice(idx));break;}
+        if(fi>idx)out.push(part.slice(idx,fi));
+        out.push(React.createElement('mark',{key:`m${fi}`,className:'hl'},part.slice(fi,fi+tok.length)));
+        idx=fi+tok.length;
+      }
+      next.push(...out);
+    }
+    parts=next;
+  }
+  return React.createElement('span',null,...parts.map((p,i)=>typeof p==='string'?React.createElement('span',{key:i},p):p));
+}
+
+/* ── Fuzzy line-item matcher — used as fallback when proposal_line_item field is absent ──
+ * Maps roofing product names/categories to the most appropriate proposal line item
+ * using keyword patterns that reflect industry standard product → line item relationships.
+ */
+const FUZZY_PATTERNS=[
+  {keys:['shingle','laminate','architectural','3-tab','dimensional','lifetime'],li:'shingle'},
+  {keys:['synthetic underlayment','synthetic underlay'],li:'synthetic underlayment'},
+  {keys:['underlayment','felt','15lb','30lb'],li:'underlayment'},
+  {keys:['ice and water','ice & water','ice/water','i&w shield','ice shield','water shield'],li:'ice'},
+  {keys:['starter strip','starter shingle'],li:'starter'},
+  {keys:['drip edge','drip-edge','eave flashing'],li:'drip edge'},
+  {keys:['ridge vent','hip vent','ridge ventilation'],li:'ridge vent'},
+  {keys:['ridge cap','hip cap','hip and ridge','hip & ridge'],li:'ridge cap'},
+  {keys:['pipe boot','pipe flash','soil stack','boot flash'],li:'pipe'},
+  {keys:['step flashing','counter flash','wall flash'],li:'flash'},
+  {keys:['valley','valley flashing','open valley','closed valley'],li:'valley'},
+  {keys:['gutter','k-style gutter','half-round gutter'],li:'gutter'},
+  {keys:['downspout','leader'],li:'downspout'},
+  {keys:['skylight','velux'],li:'skylight'},
+  {keys:['chimney','chimney flash'],li:'chimney'},
+  {keys:['labor','installation','install labor','roofing labor'],li:'labor'},
+  {keys:['tear off','tear-off','removal','haul away','haul-away','disposal'],li:'tear'},
+  {keys:['permit','building permit'],li:'permit'},
+  {keys:['inspection','inspect'],li:'inspect'},
+  {keys:['caulk','sealant','roofing cement'],li:'sealant'},
+  {keys:['ice & water','ice and water','icewater'],li:'ice and water'},
+];
+function fuzzyMatchLI(productName,productCategory,lineItems){
+  const pn=n(productName),pc=n(productCategory||'');
+  const combined=pn+' '+pc;
+  for(const pat of FUZZY_PATTERNS){
+    if(pat.keys.some(k=>combined.includes(n(k)))){
+      const m=lineItems.find(li=>n(li.display_name).includes(pat.li));
+      if(m)return m;
+    }
+  }
+  return null;
+}
+
+/* ── Build complete auto-mapping: primary via proposal_line_item, fallback fuzzy ── */
+function buildAutoMappings(selProds,lineItems){
+  const nm={};
+  for(const p of selProds){
+    // Primary: exact match on the proposal_line_item field
+    if(p.proposal_line_item){
+      const m=lineItems.find(li=>n(li.display_name)===n(p.proposal_line_item));
+      if(m){nm[p.product_id]=m.id;continue;}
+      // Try partial match if exact fails
+      const partial=lineItems.find(li=>n(li.display_name).includes(n(p.proposal_line_item))||n(p.proposal_line_item).includes(n(li.display_name)));
+      if(partial){nm[p.product_id]=partial.id;continue;}
+    }
+    // Fallback: keyword-based fuzzy match
+    const fuzzy=fuzzyMatchLI(p.product_name,p.product_category,lineItems);
+    if(fuzzy)nm[p.product_id]=fuzzy.id;
+  }
+  return nm;
+}
+
+/* data */
+async function loadProds(onP){
+  const B=1000;let all=[],pg=0;
+  while(true){
+    const fr=pg*B,to=fr+B-1;
+    const{data,error}=await SB.from('srs_products')
+      .select('product_id,product_name,product_category,manufacturer_norm,family_tier,proposal_line_item,suggested_price,product_uom,product_image_url,primary_item,is_big3_brand,product_line')
+      .eq('exclude_default',false).range(fr,to).order('manufacturer_norm',{nullsFirst:false}).order('product_name');
+    if(error||!data||!data.length)break;
+    all=all.concat(data);onP&&onP(all.length);
+    if(data.length<B)break;pg++;
+  }
+  return all;
+}
+async function loadFams(){const{data}=await SB.from('srs_product_families').select('product_id,family_name,family_tier,is_default,manufacturer_norm');const m={};(data||[]).forEach(f=>{m[f.product_id]=f;});return m;}
+async function loadLIs(){const{data,error}=await SB.from('proposal_line_items').select('*').order('sort_order');return{data:data||[],error};}
+
+/* zuper */
+async function getMeasTokens(k,u){const r=await zf(`${u}measurements/categories?sort=ASC&sort_by=created_at`,{headers:zh(k)});if(!r.ok)return[];const toks=[];for(const c of(r.j?.data||[])){for(const t of(c.measurement_tokens||c.tokens||[]))toks.push({uid:t.measurement_token_uid,name:t.measurement_token_name||'',uom:t.uom||'',catUid:c.measurement_category_uid});}return toks;}
+async function getProdCat(k,u){const r=await zf(`${u}products/category?count=100&page=1`,{headers:zh(k)});const c=r.j?.data||r.j?.categories||[];return c[0]?.product_category_uid||c[0]?.category_uid||null;}
+function mkProd(p,cu){return{product:{product_name:p.product_name,product_id:`SRS-${p.product_id}`,is_available:true,product_category:cu||'UNCATEGORIZED',price:parseFloat(p.suggested_price)||0,min_quantity:0,currency:'',quantity:0,product_manual_link:'',product_description:'',product_image:p.product_image_url||'',product_type:'PARTS',pricing_level:'ROLLUP',brand:p.manufacturer_norm||'',track_quantity:false,specification:'',has_custom_tax:false,meta_data:[],uom:uom(p.product_uom),is_billable:true,consider_profitability:true,is_commissionable:true,location_availability:[],tax:{tax_exempt:false},product_files:[],option:{customer_selection:false,option_label:'Option',option_values:[]}},vendor:[]};}
+function mkFormula(li,toks){if(li.formula_type==='direct_input'||!li.formula_expr)return null;const sorted=[...toks].sort((a,b)=>b.name.length-a.name.length);let mapped=li.formula_expr;const em=[];let c=1;for(const t of sorted){if(!t.name||!mapped.includes(t.name))continue;const k=`$${c}`;mapped=mapped.split(t.name).join(k);em.push({key:k,type:'MEASUREMENT',measurement_token_uid:t.uid,measurement_category_uid:t.catUid});c++;}if(!em.length)return null;const ck=li.display_name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').substring(0,50)+'_cpq';return{formula:{formula_name:`${li.display_name} (CPQ)`,formula_key:ck,formula_category:'AREA_MEASUREMENT',formula_description:li.display_name,formula:{expression:mapped.replace(/\s+/g,''),expression_map:em,rounding_mechanism:'NEXT_WHOLE_NUMBER'}}};}
+
+async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,onLog}){
+  const sig=signal||{cancel:false,pause:false};
+  const{key,url}=auth,log=m=>onLog&&onLog(m);
+  // Checks signal between operations — throws 'CANCELLED' so callers can distinguish
+  async function chk(){
+    while(sig.pause&&!sig.cancel)await slp(200);
+    if(sig.cancel)throw new Error('CANCELLED');
+  }
+
+  await chk();
+  onPhase('tokens','active');log('Fetching measurement tokens...');
+  const[toks,cu]=await Promise.all([getMeasTokens(key,url),getProdCat(key,url)]);
+  log(`${toks.length} tokens, category: ${cu||'none'}`);onPhase('tokens','done',{count:toks.length});
+
+  await chk();
+  onPhase('products','active');log(`Creating ${selProds.length} products...`);
+  const pR=[],um={};let ps=0,pf=0;
+  const pls=selProds.map(p=>mkProd(p,cu));
+  for(const[ci,chunk]of cks(pls,BULK).entries()){
+    await chk();
+    const si=ci*BULK;let ok=false;
+    try{const r=await zf(`${url}products/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({products:chunk})});if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){for(let i=0;i<chunk.length;i++){const p=selProds[si+i],uid=r.j.data[i]?.product_uid;if(uid){um[p.product_id]=uid;ps++;}else pf++;pR.push({name:p.product_name,uid:uid||null,ok:!!uid});}ok=true;}}catch(e){if(e.message==='CANCELLED')throw e;log('Bulk prod error:'+e.message);}
+    if(!ok){for(let i=0;i<chunk.length;i++){const p=selProds[si+i];try{const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(chunk[i])});const uid=r.j?.data?.product_uid;if(uid){um[p.product_id]=uid;ps++;}else pf++;pR.push({name:p.product_name,uid:uid||null,ok:!!uid});}catch(e){if(e.message==='CANCELLED')throw e;pf++;pR.push({name:p.product_name,uid:null,ok:false});}}}
+    await slp(BDLY);
+  }
+  log(`Products: ${ps} created, ${pf} failed`);onPhase('products',pf===0?'done':'partial',{success:ps,failed:pf});
+
+  await chk();
+  onPhase('formulas','active');
+  const fR=[],fu={};let fs=0,fsk=0,ff=0;
+  const fps=[];for(const liId of[...new Set(Object.values(mappings).filter(Boolean))]){const li=lineItems.find(l=>l.id===liId);if(!li)continue;const fp=mkFormula(li,toks);if(fp)fps.push({li,fp});else fsk++;}
+  log(`Creating ${fps.length} formulas, ${fsk} skipped...`);
+  for(const[ci,chunk]of cks(fps,BULK).entries()){
+    await chk();
+    let ok=false;
+    try{const r=await zf(`${url}invoice_estimate/cpq/formulas/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({formulas:chunk.map(x=>x.fp)})});if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){for(let i=0;i<chunk.length;i++){const{li}=chunk[i],uid=r.j.data[i]?.formula_uid;if(uid){fu[li.id]=uid;fs++;}else ff++;fR.push({name:li.display_name,uid:uid||null,ok:!!uid});}ok=true;}}catch(e){if(e.message==='CANCELLED')throw e;log('Bulk formula error:'+e.message);}
+    if(!ok){for(const{li,fp}of chunk){try{const r=await zf(`${url}invoice_estimate/cpq/formulas`,{method:'POST',headers:zh(key),body:JSON.stringify(fp)});const uid=r.j?.data?.formula_uid;if(uid){fu[li.id]=uid;fs++;}else ff++;fR.push({name:li.display_name,uid:uid||null,ok:!!uid});}catch(e){if(e.message==='CANCELLED')throw e;ff++;fR.push({name:li.display_name,uid:null,ok:false});}}}
+    await slp(BDLY);
+  }
+  log(`Formulas: ${fs} ok, ${fsk} skipped, ${ff} failed`);onPhase('formulas','done',{success:fs,skipped:fsk,failed:ff});
+
+  await chk();
+  onPhase('packages','active');
+  const pkgR=[],pkgPl=['good','better','best'].map(tk=>{
+    const tp=tiers[tk]||[],un=tiers.untiered||[],all=tk==='best'?[...tp,...un]:tp;
+    const lis=all.filter(p=>um[p.product_id]).map(p=>({line_item_type:'ITEM',product_uid:um[p.product_id],product_id:`SRS-${p.product_id}`,product_type:'PARTS',name:p.product_name,description:'',uom:uom(p.product_uom),quantity:1,unit_price:parseFloat(p.suggested_price)||0,purchase_price:0,discount:0,discount_type:'FIXED',serial_nos:[],total:parseFloat(p.suggested_price)||0,section_type:'EXPANDED',show_section_total:false,show_child_prices:true,brand:p.manufacturer_norm||'',specification:'',image:'',location_uid:'',location_name:'',tax:{tax_exempt:false},is_billable:true,associated_products:[],...(mappings[p.product_id]&&fu[mappings[p.product_id]]?{formula:fu[mappings[p.product_id]]}:{})}));
+    return{package_name:`${TM[tk].label} - ${TM[tk].sub}`,line_items:lis,tier:tk};
+  });
+  log('Creating 3 service packages...');
+  let bulkOk=false;
+  try{const r=await zf(`${url}invoice_estimate/package/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({invoice_estimate_packages:pkgPl.map(({package_name,line_items})=>({package_name,line_items}))})});if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){for(let i=0;i<pkgPl.length;i++){const uid=r.j.data[i]?.package_uid;pkgR.push({name:pkgPl[i].package_name,uid:uid||null,ok:!!uid,tier:pkgPl[i].tier});}bulkOk=true;}}catch(e){if(e.message==='CANCELLED')throw e;log('Bulk package error:'+e.message);}
+  if(!bulkOk){for(const{package_name,line_items,tier}of pkgPl){try{const r=await zf(`${url}invoice_estimate/package`,{method:'POST',headers:zh(key),body:JSON.stringify({invoice_estimate_package:{package_name,line_items}})});const uid=r.j?.data?.package_uid;pkgR.push({name:package_name,uid:uid||null,ok:!!uid,tier});}catch(e){if(e.message==='CANCELLED')throw e;pkgR.push({name:package_name,uid:null,ok:false,tier});}}}
+  const ps2=pkgR.filter(r=>r.ok).length,pf2=pkgR.filter(r=>!r.ok).length;
+  log(`Packages: ${ps2} created, ${pf2} failed`);onPhase('packages',pf2===0?'done':'partial',{success:ps2,failed:pf2});
+  return{pR,fR,pkgR};
+}
+
+/* ── Deletion engine — fetches UIDs from Zuper then deletes one-by-one with pause/cancel ── */
+async function fetchDeleteUids(type,url,key){
+  if(type==='products'){
+    const all=[];let pg=1;
+    while(true){const r=await zf(`${url}product?count=50&page=${pg}`,{headers:zh(key)});const d=r.j?.data||[];all.push(...d.map(p=>({uid:p.product_uid,name:p.product_name||''})));if(d.length<50)break;pg++;}
+    return all;
+  }
+  if(type==='formulas'){
+    let pg=1,all=[];
+    while(true){const r=await zf(`${url}invoice_estimate/cpq/formulas?count=100&page=${pg}`,{headers:zh(key)});const d=r.j?.data||[];const custom=d.filter(f=>f.is_custom===true);all.push(...custom.map(f=>({uid:f.formula_uid,name:f.formula_name||''})));if(d.length<100)break;pg++;}
+    return all;
+  }
+  if(type==='packages'){
+    const all=[];let pg=1;
+    while(true){const r=await zf(`${url}invoice_estimate/package?count=50&page=${pg}`,{headers:zh(key)});const d=r.j?.data||[];all.push(...d.map(p=>({uid:p.package_uid,name:p.package_name||''})));if(d.length<50)break;pg++;}
+    return all;
+  }
+  return[];
+}
+function deleteEndpoint(type,url,uid){
+  if(type==='products')return`${url}product/${uid}`;
+  if(type==='formulas')return`${url}invoice_estimate/cpq/formulas/${uid}`;
+  if(type==='packages')return`${url}invoice_estimate/package/${uid}`;
+  return null;
+}
+
+/* ─── UI ─────────────────────────────────────────────────────────────── */
+function Loader({msg}){return React.createElement('div',{className:'ld',style:{padding:'40px 0',justifyContent:'center'}},React.createElement('div',{className:'da'}),React.createElement('div',{className:'da'}),React.createElement('div',{className:'da'}),React.createElement('span',null,msg||'Loading…'));}
+
+function Steps({step,maxStep,setStep}){
+  return React.createElement('div',{className:'steps'},
+    ['Auth','Products','Line Items','Packages','Import'].map((l,i)=>
+      React.createElement('div',{key:i,className:`step${i===step?' on':''}${i<step?' done':''}${i>maxStep?' lk':''}`,onClick:()=>i<=maxStep&&setStep(i)},
+        React.createElement('div',{className:'sn'},i<step?'✓':i+1),
+        React.createElement('span',null,l)
+      )
+    )
+  );
+}
+
+function Step1({onSuccess}){
+  const[k,sk]=useState(''),
+       [r,sr]=useState(REGIONS[0].value),
+       [ld,sld]=useState(false),
+       [err,se]=useState(''),
+       [sh,ssh]=useState(false),
+       [acc,sa]=useState(null);
+  const go=async()=>{
+    if(!k.trim()){se('API key required');return;}
+    sld(true);se('');
+    const rg=REGIONS.find(x=>x.value===r);
+    try{const res=await zf(`${rg.url}user/company`,{headers:zh(k.trim())});if(!res.ok)throw new Error(`HTTP ${res.status}`);const nm=res.j?.data?.company_name||res.j?.company_name||'Zuper Account';sa({name:nm,region:rg.label,key:k.trim(),url:rg.url});}
+    catch(e){se(e.message);}sld(false);
+  };
+  if(acc)return React.createElement('div',null,
+    React.createElement('div',{className:'ach'},React.createElement('div',{className:'adot'}),React.createElement('div',{style:{flex:1}},React.createElement('div',{style:{fontSize:14,fontWeight:500}},acc.name),React.createElement('div',{style:{fontSize:11,color:'var(--txd)',marginTop:2}},acc.region)),React.createElement('span',{className:'tag'},'connected')),
+    React.createElement('div',{className:'nav'},React.createElement('span',{className:'nav-i'},'SRS catalog ready'),React.createElement('button',{className:'btn',onClick:()=>onSuccess(acc)},'Next: Select Products →'))
+  );
+  return React.createElement('div',null,
+    React.createElement('p',{className:'hint',style:{marginBottom:20}},'Connect your Zuper account. Products pull from the SRS catalog and can be imported directly.'),
+    React.createElement('div',{style:{marginBottom:12}},React.createElement('div',{className:'lbl'},'Region'),React.createElement('select',{className:'sel',value:r,onChange:e=>sr(e.target.value)},REGIONS.map(rg=>React.createElement('option',{key:rg.value,value:rg.value},rg.label)))),
+    React.createElement('div',{style:{marginBottom:12}},React.createElement('div',{className:'lbl'},'API Key'),React.createElement('div',{className:'pw-wr'},React.createElement('input',{className:'inp',type:sh?'text':'password',value:k,onChange:e=>sk(e.target.value),placeholder:'x-api-key from Zuper Settings',onKeyDown:e=>e.key==='Enter'&&go()}),React.createElement('button',{className:'pw-eye',onClick:()=>ssh(!sh)},sh?'hide':'show'))),
+    err&&React.createElement('div',{className:'a-err'},err),
+    React.createElement('div',{className:'nav'},React.createElement('div'),React.createElement('button',{className:'btn',onClick:go,disabled:ld},ld?React.createElement('span',{className:'ld'},React.createElement('div',{className:'da'}),React.createElement('div',{className:'da'}),React.createElement('div',{className:'da'}),'Verifying'):'Verify & Connect'))
+  );
+}
+
+/*
+ * ─── STEP 2: Products — Filter Engine ───────────────────────────────────────
+ *
+ * HOW FILTERING WORKS:
+ *
+ * 1. Brand (pill or dropdown) — case-insensitive exact match on manufacturer_norm.
+ *    Pills are matched to canonical DB values via normalised startsWith so "GAF"
+ *    matches both "GAF" and "GAF Roofing Products" in the DB.
+ *
+ * 2. Category (dropdown) — case-insensitive exact match on product_category.
+ *    The category list narrows automatically when a brand is selected.
+ *
+ * 3. Tier (dropdown) — normT() on family_tier from srs_product_families or
+ *    the product row itself.
+ *
+ * 4. Free-text search — space-split into tokens. Every token must appear in
+ *    at least ONE of these fields (OR per field, AND across tokens):
+ *      product_name · manufacturer_norm · product_category · product_line
+ *      · proposal_line_item
+ *
+ *    IMPORTANT: when a brand is already selected via dropdown/pill, the text
+ *    search does NOT re-filter on manufacturer_norm. This prevents the common
+ *    failure mode where selecting "GAF" then typing "gaf shingles" yields 0
+ *    results because the brand field was double-filtered.
+ *
+ * 5. Debounce: 250 ms on the text field — prevents re-filtering 19k rows on
+ *    every keystroke.
+ */
+function Step2({onNext,selIds,setSelIds,allProds,fmap,prodsLoaded,loadProgress}){
+  const[rawQ,setRawQ]=useState('');
+  const[brand,setBrand]=useState('');   // canonical manufacturer_norm from DB
+  const[catF,setCatF]=useState('');
+  const[tierF,setTierF]=useState('');
+  const[pg,setPg]=useState(0);
+  const q=useDb(rawQ,250);
+  const selSet=useMemo(()=>new Set(selIds),[selIds]);
+
+  // All unique brands from actual DB data
+  const allBrands=useMemo(()=>
+    Array.from(new Set(allProds.map(p=>p.manufacturer_norm).filter(Boolean))).sort(),
+  [allProds]);
+
+  // Quick-pill brands that exist in DB (case-insensitive prefix match)
+  const visPills=useMemo(()=>
+    Q_BRANDS.filter(qb=>allBrands.some(b=>n(b)===n(qb)||n(b).startsWith(n(qb)+' '))),
+  [allBrands]);
+
+  // Map pill label → canonical DB value
+  const canonical=useCallback((qb)=>
+    allBrands.find(b=>n(b)===n(qb)||n(b).startsWith(n(qb)+' '))||qb,
+  [allBrands]);
+
+  // Category list: narrows when brand selected
+  const availCats=useMemo(()=>{
+    const base=brand?allProds.filter(p=>n(p.manufacturer_norm)===n(brand)):allProds;
+    return Array.from(new Set(base.map(p=>p.product_category).filter(Boolean))).sort();
+  },[allProds,brand]);
+  useEffect(()=>{if(catF&&!availCats.includes(catF))setCatF('');},[brand,availCats]);
+
+  // ── THE FILTER ──────────────────────────────────────────────────────────────
+  const filtered=useMemo(()=>{
+    const toks=q.toLowerCase().trim().split(/\s+/).filter(t=>t.length>0);
+    return allProds.filter(p=>{
+      // 1. Brand — case-insensitive exact
+      if(brand&&n(p.manufacturer_norm)!==n(brand))return false;
+      // 2. Category — case-insensitive exact
+      if(catF&&n(p.product_category)!==n(catF))return false;
+      // 3. Tier
+      if(tierF&&normT(fmap[p.product_id]?.family_tier||p.family_tier)!==tierF)return false;
+      // 4. Free text: each token must match at least one field
+      if(!toks.length)return true;
+      // When brand already selected, skip re-searching manufacturer_norm
+      const fields=[
+        n(p.product_name),
+        brand?null:n(p.manufacturer_norm),
+        catF?null:n(p.product_category),
+        n(p.product_line),
+        n(p.proposal_line_item),
+      ].filter(Boolean);
+      return toks.every(tok=>fields.some(f=>f.includes(tok)));
+    });
+  },[allProds,fmap,q,brand,catF,tierF]);
+
+  useEffect(()=>{setPg(0);},[q,brand,catF,tierF]);
+
+  const vis=filtered.slice(pg*PGS,(pg+1)*PGS);
+  const totPg=Math.max(1,Math.ceil(filtered.length/PGS));
+  const hasF=rawQ||brand||catF||tierF;
+  const clearAll=()=>{setRawQ('');setBrand('');setCatF('');setTierF('');};
+  const toggle=id=>setSelIds(p=>selSet.has(id)?p.filter(x=>x!==id):[...p,id]);
+  const selFilt=()=>setSelIds(p=>[...new Set([...p,...filtered.map(x=>x.product_id)])]);
+  const clearSel=()=>setSelIds([]);
+  const hlToks=useMemo(()=>q.toLowerCase().trim().split(/\s+/).filter(t=>t.length>=2),[q]);
+
+  const tcounts=useMemo(()=>{const c={good:0,better:0,best:0,other:0};allProds.forEach(p=>{const t=normT(fmap[p.product_id]?.family_tier||p.family_tier);if(t)c[t]++;else c.other++;});return c;},[allProds,fmap]);
+
+  if(!prodsLoaded&&!allProds.length)return React.createElement('div',null,
+    React.createElement(Loader,{msg:`Loading SRS catalog… ${loadProgress.toLocaleString()} products`}),
+    React.createElement('div',{style:{padding:'0 40px 20px'}},
+      React.createElement('div',{className:'pw-bar'},React.createElement('div',{className:'pb',style:{width:`${Math.min((loadProgress/19000)*100,95)}%`}})),
+      React.createElement('div',{style:{fontSize:11,color:'var(--txd)',textAlign:'center',marginTop:4}},loadProgress.toLocaleString()+' of ~19,000 loaded')
+    )
+  );
+
+  return React.createElement('div',null,
+    // Stats
+    React.createElement('div',{className:'stats'},
+      ['good','better','best'].map(tk=>React.createElement('div',{key:tk,className:'stat'},React.createElement('div',{className:'stat-n',style:{color:TM[tk].color}},tcounts[tk].toLocaleString()),React.createElement('div',{className:'stat-l'},TM[tk].label+' tier'))),
+      React.createElement('div',{className:'stat'},React.createElement('div',{className:'stat-n'},allProds.length.toLocaleString()),React.createElement('div',{className:'stat-l'},'Total products'))
+    ),
+    // Brand pills
+    visPills.length>0&&React.createElement('div',{className:'bpills'},
+      React.createElement('span',{className:'bp-lbl'},'Quick brand:'),
+      visPills.map(b=>{const cb=canonical(b);return React.createElement('span',{key:b,className:`bp${brand===cb?' on':''}`,onClick:()=>setBrand(brand===cb?'':cb)},b);}),
+      brand&&!visPills.map(b=>canonical(b)).includes(brand)&&React.createElement('span',{className:'bp on'},brand)
+    ),
+    // Filter row
+    React.createElement('div',{className:'frow'},
+      React.createElement('div',{className:'sw'},
+        React.createElement('span',{className:'si'},'⌕'),
+        React.createElement('input',{className:'inp',value:rawQ,onChange:e=>setRawQ(e.target.value),placeholder:'Search name, brand, category, product line…',autoComplete:'off',spellCheck:false}),
+        rawQ&&React.createElement('button',{className:'scl',onClick:()=>setRawQ('')},'×')
+      ),
+      React.createElement('select',{className:'sel',value:brand,onChange:e=>setBrand(e.target.value)},
+        React.createElement('option',{value:''},'All Brands'),
+        allBrands.map(b=>React.createElement('option',{key:b,value:b},b))
+      ),
+      React.createElement('select',{className:'sel',value:catF,onChange:e=>setCatF(e.target.value)},
+        React.createElement('option',{value:''},'All Categories'),
+        availCats.map(c=>React.createElement('option',{key:c,value:c},c))
+      ),
+      React.createElement('select',{className:'sel',value:tierF,onChange:e=>setTierF(e.target.value)},
+        React.createElement('option',{value:''},'All Tiers'),
+        [['good','Good'],['better','Better'],['best','Best']].map(([v,l])=>React.createElement('option',{key:v,value:v},l))
+      )
+    ),
+    // Active filter chips
+    React.createElement('div',{className:'fbar'},
+      !hasF&&React.createElement('span',{className:'fbar-empty'},'Showing all '+allProds.length.toLocaleString()+' products — use filters to narrow'),
+      rawQ&&React.createElement('span',{className:'fchip'},'⌕ "'+rawQ+'"',React.createElement('button',{className:'fchip-x',onClick:()=>setRawQ('')},'×')),
+      brand&&React.createElement('span',{className:'fchip'},'Brand: '+brand,React.createElement('button',{className:'fchip-x',onClick:()=>setBrand('')},'×')),
+      catF&&React.createElement('span',{className:'fchip'},'Category: '+catF,React.createElement('button',{className:'fchip-x',onClick:()=>setCatF('')},'×')),
+      tierF&&React.createElement('span',{className:'fchip'},'Tier: '+TM[tierF]?.label,React.createElement('button',{className:'fchip-x',onClick:()=>setTierF('')},'×')),
+      hasF&&React.createElement('button',{className:'f-clr',onClick:clearAll},'Clear all filters')
+    ),
+    // List meta
+    React.createElement('div',{className:'pmeta'},
+      React.createElement('span',{className:'pmeta-t'},filtered.length.toLocaleString()+' matching · '+selIds.length.toLocaleString()+' selected'+(totPg>1?' · page '+(pg+1)+'/'+totPg:'')),
+      React.createElement('div',{className:'row'},
+        React.createElement('button',{className:'btn-ico btn-sm',onClick:selFilt},'Select matching'),
+        React.createElement('button',{className:'btn-ico btn-sm',onClick:clearSel},'Clear sel.')
+      )
+    ),
+    // Product list
+    React.createElement('div',{className:'sbox'},
+      vis.length===0
+        ?React.createElement('div',{className:'nodata'},
+            hasF?React.createElement('div',null,React.createElement('div',null,'No products match your filters.'),React.createElement('button',{className:'f-clr',style:{marginTop:8},onClick:clearAll},'Clear all filters'))
+               :'No products loaded yet.'
+          )
+        :vis.map(p=>{
+            const isSel=selSet.has(p.product_id);
+            const tier=normT(fmap[p.product_id]?.family_tier||p.family_tier);
+            return React.createElement('div',{key:p.product_id,className:`prow${isSel?' on':''}`,onClick:()=>toggle(p.product_id)},
+              React.createElement('div',{className:'pck'},isSel?'✓':''),
+              React.createElement('div',{style:{flex:1,minWidth:0}},
+                React.createElement('div',{className:'pn'},hlToks.length?React.createElement(Hl,{text:p.product_name,toks:hlToks}):p.product_name),
+                React.createElement('div',{className:'ptags'},
+                  p.manufacturer_norm&&React.createElement('span',{className:'kpill'},p.manufacturer_norm),
+                  p.product_category&&React.createElement('span',{className:'kpill'},p.product_category),
+                  p.product_line&&React.createElement('span',{className:'kpill',style:{maxWidth:110,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block'}},p.product_line),
+                  p.proposal_line_item&&React.createElement('span',{style:{fontSize:9,color:'var(--or)',background:'var(--or3)',border:'1px solid rgba(232,98,42,.2)',borderRadius:2,padding:'1px 5px',whiteSpace:'nowrap',overflow:'hidden',maxWidth:140,textOverflow:'ellipsis',display:'inline-block'}},p.proposal_line_item),
+                  tier&&React.createElement('span',{className:tbc(tier)},tier.toUpperCase())
+                )
+              ),
+              p.suggested_price!=null&&React.createElement('div',{className:'ppr'},'$'+parseFloat(p.suggested_price).toFixed(2))
+            );
+          })
+    ),
+    // Pagination
+    totPg>1&&React.createElement('div',{className:'pg'},
+      React.createElement('button',{className:'btn-g btn-sm',disabled:pg===0,onClick:()=>setPg(0)},'«'),
+      React.createElement('button',{className:'btn-g btn-sm',disabled:pg===0,onClick:()=>setPg(p=>p-1)},'‹'),
+      React.createElement('span',{className:'pg-n'},`${pg+1} / ${totPg}`),
+      React.createElement('button',{className:'btn-g btn-sm',disabled:pg>=totPg-1,onClick:()=>setPg(p=>p+1)},'›'),
+      React.createElement('button',{className:'btn-g btn-sm',disabled:pg>=totPg-1,onClick:()=>setPg(totPg-1)},'»'),
+      React.createElement('span',{style:{fontSize:11,color:'var(--txd)',marginLeft:8}},filtered.length.toLocaleString()+' total')
+    ),
+    React.createElement('div',{className:'nav'},
+      React.createElement('span',{className:'nav-i'},selIds.length?selIds.length.toLocaleString()+' product(s) selected':'Select at least 1 product'),
+      React.createElement('button',{className:'btn',disabled:!selIds.length,onClick:onNext},'Next: Map Line Items →')
+    )
+  );
+}
+
+function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings,onNext,onBack}){
+  const[ld,sld]=useState(!lineItems.length);const[err,se]=useState('');
+  useEffect(()=>{
+    if(lineItems.length)return;
+    (async()=>{
+      const{data,error}=await loadLIs();
+      if(error){se(error.message);sld(false);return;}
+      setLineItems(data);
+      const selProds=allProds.filter(p=>selIds.includes(p.product_id));
+      setMappings(buildAutoMappings(selProds,data));
+      sld(false);
+    })();
+  },[]);
+
+  const selP=useMemo(()=>allProds.filter(p=>selIds.includes(p.product_id)),[allProds,selIds]);
+  const byGroup=useMemo(()=>lineItems.reduce((a,li)=>{const g=li.srs_category||'Other';(a[g]=a[g]||[]).push(li);return a;},{}),[lineItems]);
+
+  // ── Mapping summary stats ────────────────────────────────────────────────
+  const summary=useMemo(()=>{
+    let mapped=0,withFormula=0,directInput=0,notMapped=0;
+    const formulaExprs={}; // expr → count
+    for(const p of selP){
+      const liId=mappings[p.product_id];
+      if(!liId){notMapped++;continue;}
+      mapped++;
+      const li=lineItems.find(l=>l.id===liId);
+      if(li?.formula_expr&&li.formula_type!=='direct_input'){
+        withFormula++;
+        formulaExprs[li.formula_expr]=(formulaExprs[li.formula_expr]||0)+1;
+      }else{directInput++;}
+    }
+    // Deduplicated unique formula expressions sorted by usage count
+    const uniqueFormulas=Object.entries(formulaExprs).sort((a,b)=>b[1]-a[1]);
+    // Count how many unique formula CREATE calls will be made (one per unique expr)
+    const formulasToCreate=uniqueFormulas.length;
+    return{mapped,withFormula,directInput,notMapped,uniqueFormulas,formulasToCreate};
+  },[selP,mappings,lineItems]);
+
+  const reAutoMap=()=>setMappings(buildAutoMappings(selP,lineItems));
+
+  if(ld)return React.createElement(Loader,{msg:'Loading proposal_line_items & auto-mapping…'});
+  if(err&&!lineItems.length)return React.createElement('div',{className:'a-err'},err);
+
+  return React.createElement('div',null,
+    // ── Mapping summary ──────────────────────────────────────────────────
+    React.createElement('div',{className:'map-summary'},
+      React.createElement('div',{className:'map-summary-title'},
+        React.createElement('span',null,'Formula & Line-Item Mapping Summary'),
+        React.createElement('button',{className:'btn-ico btn-sm',onClick:reAutoMap},'↺ Re-map')
+      ),
+      React.createElement('div',{className:'map-summary-grid'},
+        React.createElement('div',{className:'ms-cell'},React.createElement('div',{className:'ms-n ok'},summary.mapped),React.createElement('div',{className:'ms-l'},'Mapped to line item')),
+        React.createElement('div',{className:'ms-cell'},React.createElement('div',{className:'ms-n info'},summary.withFormula),React.createElement('div',{className:'ms-l'},'With formula expression')),
+        React.createElement('div',{className:'ms-cell'},React.createElement('div',{className:'ms-n'},summary.directInput),React.createElement('div',{className:'ms-l'},'Direct input (no formula)')),
+        React.createElement('div',{className:'ms-cell'},React.createElement('div',{className:'ms-n',style:{color:'var(--or)'}},summary.formulasToCreate),React.createElement('div',{className:'ms-l'},'Unique formulas to create'))
+      ),
+      summary.notMapped>0&&React.createElement('div',{style:{fontSize:11,color:'var(--am)',marginBottom:8}},'⚠ '+summary.notMapped+' product(s) could not be auto-matched. Assign manually below.'),
+      summary.uniqueFormulas.length>0&&React.createElement('div',null,
+        React.createElement('div',{style:{fontSize:10,color:'var(--txd)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:5}},'Active formula expressions ('+summary.uniqueFormulas.length+' unique):'),
+        React.createElement('div',{className:'formula-chips'},
+          summary.uniqueFormulas.map(([expr,cnt],i)=>
+            React.createElement('div',{key:i,className:'formula-chip-item'},
+              React.createElement('span',null,expr.length>50?expr.slice(0,48)+'…':expr),
+              React.createElement('span',{className:'fci-count'},cnt+'×')
+            )
+          )
+        )
+      )
+    ),
+    // ── Per-product mapping rows ─────────────────────────────────────────
+    React.createElement('div',{className:'sbox',style:{maxHeight:330}},
+      selP.map(p=>{
+        const mid=mappings[p.product_id];
+        const li=mid?lineItems.find(l=>l.id===mid):null;
+        const tier=normT(fmap[p.product_id]?.family_tier||p.family_tier);
+        const hasFormula=!!(li?.formula_expr&&li.formula_type!=='direct_input');
+        return React.createElement('div',{key:p.product_id,className:'lir'},
+          React.createElement('div',{className:'row',style:{marginBottom:7}},
+            React.createElement('div',{style:{flex:1,minWidth:0}},
+              React.createElement('div',{style:{fontSize:12,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:'var(--tx)'}},p.product_name),
+              React.createElement('div',{className:'row',style:{gap:4,marginTop:3}},
+                p.manufacturer_norm&&React.createElement('span',{className:'kpill'},p.manufacturer_norm),
+                p.product_category&&React.createElement('span',{className:'kpill'},p.product_category),
+                tier&&React.createElement('span',{className:tbc(tier)},tier.toUpperCase())
+              )
+            ),
+            mid&&React.createElement('span',{className:'li-ok',style:{background:hasFormula?'var(--ok-bg)':'var(--bg3)',color:hasFormula?'var(--ok-tx)':'var(--txd)',border:`1px solid ${hasFormula?'var(--ok-bd)':'var(--bdd)'}`}},
+              hasFormula?'✓ formula':'✓ mapped'
+            )
+          ),
+          React.createElement('select',{className:'sel',style:{fontSize:11},value:mid||'',onChange:e=>setMappings(m=>({...m,[p.product_id]:e.target.value?parseInt(e.target.value):undefined}))},
+            React.createElement('option',{value:''},'— no formula (manual quantity) —'),
+            Object.entries(byGroup).map(([g,lis])=>React.createElement('optgroup',{key:g,label:g},lis.map(li=>React.createElement('option',{key:li.id,value:li.id},li.display_name+(li.is_gated?' ⚠':'')+(li.formula_expr&&li.formula_type!=='direct_input'?' [formula]':'')))))
+          ),
+          li?.formula_expr&&React.createElement('div',{style:{display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginTop:5}},
+            React.createElement('span',{className:'fml'},li.formula_expr),
+            li.output_uom&&React.createElement('span',{className:'kpill'},li.output_uom),
+            li.is_gated&&React.createElement('span',{className:'li-gt'},'⚠ '+li.gate_question)
+          )
+        );
+      })
+    ),
+    React.createElement('div',{className:'nav'},React.createElement('button',{className:'btn-g',onClick:onBack},'← Back'),React.createElement('button',{className:'btn',onClick:onNext},'Build Packages →'))
+  );
+}
+
+function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,onNext,onBack}){
+  const[sqft,setSqft]=useState(2200);const[pitch,setPitch]=useState('standard');const[story,setStory]=useState('1');
+  const selP=useMemo(()=>allProds.filter(p=>selIds.includes(p.product_id)),[allProds,selIds]);
+  useEffect(()=>{const t={good:[],better:[],best:[],untiered:[]};selP.forEach(p=>{const tk=normT(fmap[p.product_id]?.family_tier||p.family_tier);if(tk)t[tk].push(p);else t.untiered.push(p);});setTiers(t);},[selP,fmap]);
+
+  // Roof calculations
+  const squares=Math.round((sqft/100)*10)/10; // e.g. 22.0 sq
+  const pitchMult=PITCH[pitch]||1;
+  const storyMult=STORY[story]||1;
+
+  // Price = rate/sq × squares × pitch multiplier × story multiplier
+  // This is the industry-standard method for presenting installed roofing costs
+  const calcPrice=tk=>{
+    const rc=RATE_CARDS[tk];
+    return Math.round(rc.rate * squares * pitchMult * storyMult / 100) * 100;
+  };
+
+  // Mapped formula count for this proposal
+  const formulaCount=Object.keys(mappings).filter(k=>mappings[k]).length;
+
+  return React.createElement('div',null,
+    // Controls bar
+    React.createElement('div',{className:'sqbar'},
+      React.createElement('label',null,'Roof size (sqft)'),
+      React.createElement('input',{className:'inp',type:'number',value:sqft,min:100,max:50000,onChange:e=>setSqft(parseInt(e.target.value)||2200)}),
+      React.createElement('label',null,'Pitch'),
+      React.createElement('select',{className:'sel',value:pitch,onChange:e=>setPitch(e.target.value)},[['low','Low (0–3/12)'],['standard','Std (4–6/12)'],['steep','Steep (7–9/12)'],['very-steep','Very Steep (10+/12)']].map(([v,l])=>React.createElement('option',{key:v,value:v},l))),
+      React.createElement('label',null,'Story'),
+      React.createElement('select',{className:'sel',value:story,onChange:e=>setStory(e.target.value)},[['1','1-Story'],['2','2-Story'],['3','3-Story']].map(([v,l])=>React.createElement('option',{key:v,value:v},l))),
+      React.createElement('span',{style:{fontSize:11,color:'var(--txd)',marginLeft:'auto',whiteSpace:'nowrap'}},
+        React.createElement('b',{style:{color:'var(--tx)'}},squares.toFixed(1)),' sq · ',selIds.length,' products · ',formulaCount,' formulas'
+      )
+    ),
+    // Tier cards
+    React.createElement('div',{className:'tgrid'},
+      ['good','better','best'].map(tk=>{
+        const td=TM[tk],rc=RATE_CARDS[tk];
+        const price=calcPrice(tk);
+        const pricePerSq=Math.round(rc.rate*pitchMult*storyMult);
+        const tp=tiers[tk]||[],un=tiers.untiered||[];
+        const show=tk==='best'?[...tp,...un]:tp;const mx=tk==='good'?4:tk==='better'?6:10;
+        return React.createElement('div',{key:tk,className:`tc${tk==='better'?' tc-b':tk==='best'?' tc-p':''}`,},
+          td.badge&&React.createElement('div',{className:'tbdg',style:{background:td.badgeBg}},td.badge),
+          React.createElement('div',{className:'tnm',style:{color:td.color}},td.label),
+          // Price + per-sq breakdown
+          React.createElement('div',{className:'tier-price-row'},
+            React.createElement('div',{className:'tpr',style:{color:td.color}},'$'+price.toLocaleString()),
+            React.createElement('div',{className:'tier-price-sq'},'total est.')
+          ),
+          React.createElement('div',{className:'tier-sq-count'},
+            React.createElement('span',null,'$'+pricePerSq.toLocaleString()),'/sq · ',React.createElement('span',null,squares.toFixed(1)),' sq'
+          ),
+          React.createElement('div',{className:'tier-rate-note'},rc.note),
+          React.createElement('div',{className:'tsb'},td.sub),
+          React.createElement('div',{className:'tw '+td.warrC},td.warr),
+          React.createElement('div',{className:'dv'}),
+          td.feats.map((f,i)=>React.createElement('div',{key:i,className:'tf'},React.createElement('span',{style:{color:'var(--gr)',fontSize:10,marginTop:2,flexShrink:0}},'✓'),React.createElement('span',null,f))),
+          show.length>0&&React.createElement('div',{className:'tpi'},
+            React.createElement('div',{style:{fontSize:10,color:'var(--txd)',marginBottom:4,textTransform:'uppercase',letterSpacing:'.07em'}},tk==='good'?'Materials:':tk==='better'?'Upgraded:':'Full system:'),
+            show.slice(0,mx).map((p,i)=>{
+              const li=lineItems.find(l=>l.id===mappings[p.product_id]);
+              return React.createElement('div',{key:i,className:'tpi-r'},
+                React.createElement('span',{style:{color:td.color,fontSize:9}},'▸'),
+                React.createElement('span',{style:{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},p.product_name.length>30?p.product_name.slice(0,28)+'…':p.product_name),
+                li?.output_uom&&React.createElement('span',{style:{fontSize:9,color:'var(--txd)',flexShrink:0,marginLeft:4}},li.output_uom)
+              );
+            }),
+            show.length>mx&&React.createElement('div',{style:{fontSize:10,color:'var(--txd)',marginTop:2}},'+' +(show.length-mx)+' more')
+          ),
+          React.createElement('button',{className:'btn tbtn',style:td.btn},'Select '+td.label)
+        );
+      })
+    ),
+    React.createElement('div',{style:{fontSize:11,color:'var(--txd)',marginTop:8,textAlign:'center'}},
+      'Prices are estimates based on '+squares.toFixed(1)+' squares · '+PITCH[pitch]+' pitch multiplier ('+((pitchMult*100).toFixed(0))+'%) · story multiplier ('+((storyMult*100).toFixed(0))+'%)'
+    ),
+    React.createElement('div',{className:'nav'},React.createElement('button',{className:'btn-g',onClick:onBack},'← Back'),React.createElement('button',{className:'btn',onClick:onNext},'Import to Zuper →'))
+  );
+}
+
+/* ── Shared RunControls component ── */
+function RunControls({running,paused,onPause,onCancel}){
+  if(!running)return null;
+  return React.createElement('div',{className:'run-ctrls'},
+    React.createElement('span',{className:'run-ctrls-label'},'Running:'),
+    React.createElement('button',{className:`pause-btn${paused?' paused-state':''}`,onClick:onPause},
+      paused
+        ?React.createElement('span',null,'▶ Resume')
+        :React.createElement('span',null,'⏸ Pause')
+    ),
+    React.createElement('button',{className:'cancel-btn2',onClick:onCancel},'✕ Cancel')
+  );
+}
+
+function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
+  const[tab,setTab]=useState('import');
+
+  /* ── Import tab state ── */
+  const[importing,sImporting]=useState(false);
+  const[importPaused,sImportPaused]=useState(false);
+  const importSig=useRef({cancel:false,pause:false});
+  const[phases,sp]=useState({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:''},products:{s:'idle',l:'Create Products (Bulk)',i:''},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:''},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:''}});
+  const[iLogs,sILogs]=useState([]);
+  const[iRes,sIRes]=useState(null);
+  const[iDone,sIDone]=useState(false);
+  const iLogRef=useRef(null);
+  const selP=useMemo(()=>allProds.filter(p=>selIds.includes(p.product_id)),[allProds,selIds]);
+  const addILog=m=>sILogs(p=>[...p,'['+new Date().toLocaleTimeString()+'] '+m]);
+  const setPS=(k,s,x={})=>sp(p=>({...p,[k]:{...p[k],s,...x}}));
+
+  const toggleImportPause=()=>{
+    const next=!importSig.current.pause;
+    importSig.current.pause=next;
+    sImportPaused(next);
+  };
+  const cancelImport=()=>{
+    if(!window.confirm('Cancel the import? Work completed so far remains in Zuper.'))return;
+    importSig.current.cancel=true;
+    importSig.current.pause=false;
+    sImportPaused(false);
+  };
+  const startImport=async()=>{
+    importSig.current={cancel:false,pause:false};
+    sImporting(true);sILogs([]);sIRes(null);sIDone(false);
+    sp({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:''},products:{s:'idle',l:'Create Products (Bulk)',i:''},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:''},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:''}});
+    try{
+      const r=await runImport({auth,selProds:selP,lineItems,mappings,tiers,signal:importSig.current,
+        onPhase:(k,s,x={})=>{const i=x.count!=null?`${x.count} tokens`:x.success!=null?`${x.success} ok${x.failed?', '+x.failed+' failed':''}${x.skipped?', '+x.skipped+' skipped':''}`:s;setPS(k,s,{i});},
+        onLog:addILog});
+      sIRes(r);sIDone(true);
+    }catch(e){
+      if(e.message==='CANCELLED')addILog('⚠ Import cancelled by user.');
+      else addILog('ERROR: '+e.message);
+    }
+    sImporting(false);sImportPaused(false);
+  };
+
+  useEffect(()=>{if(iLogRef.current)iLogRef.current.scrollTop=iLogRef.current.scrollHeight;},[iLogs]);
+  const pks=['tokens','products','formulas','packages'];
+  const pcol={idle:'var(--txd)',active:'var(--or)',done:'var(--gr)',partial:'var(--am)',fail:'var(--re)'};
+  const tot=iRes?(iRes.pR.filter(r=>r.ok).length+iRes.pkgR.filter(r=>r.ok).length):0;
+
+  /* ── Cleanup tab state ── */
+  // Each deletion target has its own independent state + signal ref
+  const DELS=[
+    {key:'products',label:'Products',sub:'Delete all products in this Zuper account',icon:'📦',iconCls:'di-prod',
+     desc:'Fetches all products via pagination and permanently deletes them.'},
+    {key:'formulas',label:'Custom Formulas',sub:'Delete only custom (non-default) CPQ formulas',icon:'ƒx',iconCls:'di-form',
+     desc:'Only formulas where is_custom = true are deleted. Default system formulas are preserved.'},
+    {key:'packages',label:'Service Packages',sub:'Delete all service packages (Good / Better / Best)',icon:'☰',iconCls:'di-pkg',
+     desc:'Fetches all invoice/estimate packages and permanently deletes them.'},
+  ];
+  const mkDel=()=>({status:'idle',fetching:false,running:false,paused:false,uids:[],total:0,done:0,failed:0,logs:[],confirming:false});
+  const[dels,sDels]=useState({products:mkDel(),formulas:mkDel(),packages:mkDel()});
+  const delSigs=useRef({products:{cancel:false,pause:false},formulas:{cancel:false,pause:false},packages:{cancel:false,pause:false}});
+  const delLogRefs={products:useRef(null),formulas:useRef(null),packages:useRef(null)};
+
+  const updDel=(k,patch)=>sDels(d=>({...d,[k]:{...d[k],...patch}}));
+  const addDelLog=(k,line,cls='dl-info')=>sDels(d=>({...d,[k]:{...d[k],logs:[...d[k].logs,{line,cls}]}}));
+
+  // Scroll del logs
+  useEffect(()=>{
+    Object.keys(delLogRefs).forEach(k=>{const el=delLogRefs[k].current;if(el)el.scrollTop=el.scrollHeight;});
+  },[dels]);
+
+  const fetchUids=async(k)=>{
+    updDel(k,{fetching:true,status:'fetching',uids:[],total:0,logs:[],done:0,failed:0,confirming:false});
+    try{
+      const items=await fetchDeleteUids(k,auth.url,auth.key);
+      if(items.length===0){updDel(k,{fetching:false,status:'idle',uids:[],total:0});addDelLog(k,'No items found to delete.','dl-info');}
+      else{updDel(k,{fetching:false,status:'ready',uids:items,total:items.length,confirming:true});addDelLog(k,`Fetched ${items.length} item(s) — confirm to proceed.`,'dl-info');}
+    }catch(e){updDel(k,{fetching:false,status:'idle'});addDelLog(k,'Fetch error: '+e.message,'dl-fail');}
+  };
+
+  const toggleDelPause=(k)=>{
+    const next=!delSigs.current[k].pause;
+    delSigs.current[k].pause=next;
+    updDel(k,{paused:next});
+  };
+  const cancelDel=(k)=>{
+    if(!window.confirm('Cancel deletion? Records deleted so far cannot be restored.'))return;
+    delSigs.current[k].cancel=true;
+    delSigs.current[k].pause=false;
+    updDel(k,{paused:false});
+  };
+
+  const runDeletion=async(k)=>{
+    const state=dels[k];
+    if(!state.uids.length)return;
+    delSigs.current[k]={cancel:false,pause:false};
+    updDel(k,{running:true,confirming:false,status:'running',done:0,failed:0,logs:[]});
+    const sig=delSigs.current[k];
+    let done=0,failed=0;
+    for(const item of state.uids){
+      // Pause
+      while(sig.pause&&!sig.cancel)await slp(200);
+      if(sig.cancel){addDelLog(k,'⚠ Cancelled by user.','dl-info');break;}
+      const ep=deleteEndpoint(k,auth.url,item.uid);
+      try{
+        const r=await zf(ep,{method:'DELETE',headers:zh(auth.key)});
+        if(r.ok){done++;addDelLog(k,'✓ '+item.name,'dl-ok');}
+        else{failed++;addDelLog(k,'✗ '+item.name+' — '+(r.j?.message||r.status),'dl-fail');}
+      }catch(e){failed++;addDelLog(k,'✗ '+item.name+' — '+e.message,'dl-fail');}
+      updDel(k,{done,failed});
+      await slp(120);
+    }
+    updDel(k,{running:false,paused:false,status:failed===0?'done':'partial'});
+    addDelLog(k,`Finished: ${done} deleted, ${failed} failed.`,failed===0?'dl-ok':'dl-info');
+  };
+
+  /* ── Render helpers ── */
+  const R=React;
+  const el=R.createElement;
+
+  function ImportTab(){
+    return el('div',null,
+      el('div',{className:'stats'},
+        el('div',{className:'stat'},el('div',{className:'stat-n'},selP.length),el('div',{className:'stat-l'},'Products')),
+        el('div',{className:'stat'},el('div',{className:'stat-n'},Object.keys(mappings).length),el('div',{className:'stat-l'},'Formulas')),
+        el('div',{className:'stat'},el('div',{className:'stat-n'},'3'),el('div',{className:'stat-l'},'Packages')),
+        iDone&&el('div',{className:'stat'},el('div',{className:'stat-n',style:{color:'var(--gr)'}},tot),el('div',{className:'stat-l'},'Imported'))
+      ),
+      pks.map(k=>{
+        const p=phases[k],col=pcol[p.s]||'var(--txd)';
+        const nc=`pnum${p.s==='active'?' act':p.s==='done'?' dn':''}`;
+        return el('div',{key:k,className:'iphase'},
+          el('div',{className:'phdr'},
+            el('div',{className:nc},p.s==='active'?'…':p.s==='done'?'✓':p.s==='partial'?'!':pks.indexOf(k)+1),
+            el('span',{className:'ptit'},p.l),
+            el('span',{className:'pst',style:{color:col}},p.i||p.s)
+          ),
+          p.s==='done'&&iRes&&k==='products'&&el('div',{style:{maxHeight:110,overflowY:'auto',marginTop:8}},
+            iRes.pR.slice(0,8).map((r,i)=>el('div',{key:i,className:'rrow'},el('span',{className:r.ok?'rok':'rfail'},r.ok?'✓':'✗'),el('span',{style:{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},r.name),r.uid&&el('span',{style:{fontSize:10,color:'var(--txdd)',fontFamily:'monospace'}},r.uid.slice(0,8)+'…'))),
+            iRes.pR.length>8&&el('div',{style:{fontSize:11,color:'var(--txd)',padding:'4px 0'}},'+' +(iRes.pR.length-8)+' more')
+          ),
+          p.s==='done'&&iRes&&k==='packages'&&el('div',{style:{marginTop:8}},
+            iRes.pkgR.map((r,i)=>el('div',{key:i,className:'rrow'},el('span',{className:r.ok?'rok':'rfail'},r.ok?'✓':'✗'),el('span',{style:{flex:1}},r.name),el('span',{className:tbc(r.tier||'')},r.tier?.toUpperCase()||'')))
+          )
+        );
+      }),
+      iLogs.length>0&&el('div',{style:{marginTop:10}},
+        el('div',{className:'lbl'},'Activity Log'),
+        el('div',{ref:iLogRef,style:{background:'var(--inp-bg)',border:'1px solid var(--bdd)',borderRadius:'var(--r8)',padding:'10px 12px',maxHeight:120,overflowY:'auto',fontFamily:'monospace',fontSize:11,color:'var(--txd)',lineHeight:1.7}},
+          iLogs.map((l,i)=>el('div',{key:i},l)))
+      ),
+      iDone&&el('div',{className:'a-ok',style:{marginTop:10}},'🎉 Import complete — '+iRes.pR.filter(r=>r.ok).length+' products and '+iRes.pkgR.filter(r=>r.ok).length+' packages created in Zuper.'),
+      el(RunControls,{running:importing,paused:importPaused,onPause:toggleImportPause,onCancel:cancelImport}),
+      el('div',{className:'nav'},
+        el('button',{className:'btn-g',onClick:onBack,disabled:importing},'← Back'),
+        el('div',{className:'row'},
+          iDone&&el('button',{className:'btn-g',onClick:()=>{sIDone(false);sp(p=>Object.fromEntries(Object.entries(p).map(([k,v])=>[k,{...v,s:'idle',i:''}])));}},'Re-run'),
+          el('button',{className:'btn',onClick:startImport,disabled:importing,style:{minWidth:140}},
+            importing
+              ?el('span',{className:'ld'},el('div',{className:'da'}),el('div',{className:'da'}),el('div',{className:'da'}),'Importing…')
+              :iDone?'Import Complete ✓':'Start Import'
+          )
+        )
+      )
+    );
+  }
+
+  function DeleteCard({cfg}){
+    const st=dels[cfg.key];
+    const pct=st.total>0?Math.round((st.done+st.failed)/st.total*100):0;
+    const progCls='del-prog'+(st.status==='done'?' dp-done':' dp-run');
+    return el('div',{className:`del-card${st.status==='running'?' del-running':st.status==='done'||st.status==='partial'?' del-done':''}`},
+      el('div',{className:'del-card-hd'},
+        el('div',{className:'del-icon '+cfg.iconCls},cfg.icon),
+        el('div',{style:{flex:1}},
+          el('div',{className:'del-title'},cfg.label,
+            st.total>0&&el('span',{className:`del-count-badge has-items`,style:{marginLeft:8}},st.total+' items')
+          ),
+          el('div',{className:'del-sub'},cfg.sub)
+        ),
+        // Fetch button shown when idle
+        st.status==='idle'&&!st.fetching&&el('button',{className:'del-start-btn',onClick:()=>fetchUids(cfg.key)},'Fetch Items →')
+      ),
+      (st.logs.length>0||st.running||st.confirming||st.status==='done'||st.status==='partial'||st.status==='ready')&&
+      el('div',{className:'del-card-body'},
+        st.fetching&&el('div',{className:'ld',style:{marginBottom:8}},el('div',{className:'da'}),el('div',{className:'da'}),el('div',{className:'da'}),'Fetching items from Zuper…'),
+        // Confirm area
+        st.confirming&&el('div',{className:'del-confirm-area'},
+          el('span',null,'Delete all ',el('strong',null,st.total),' '+cfg.label.toLowerCase()+'? This cannot be undone.'),
+          el('div',{className:'row',style:{marginLeft:'auto',gap:6}},
+            el('button',{className:'del-confirm-no',onClick:()=>updDel(cfg.key,{confirming:false,status:'idle',uids:[],total:0,logs:[]})},'Cancel'),
+            el('button',{className:'del-confirm-yes',onClick:()=>runDeletion(cfg.key)},'Yes, Delete All')
+          )
+        ),
+        // Progress
+        (st.running||st.status==='done'||st.status==='partial')&&el('div',null,
+          el('div',{className:'del-prog-wrap'},el('div',{className:progCls,style:{width:pct+'%'}})),
+          el('div',{className:'del-stats-row'},
+            el('div',{className:'del-st'},'Total: ',el('b',null,st.total)),
+            el('div',{className:'del-st ok'},'Deleted: ',el('b',null,st.done)),
+            el('div',{className:'del-st fail'},'Failed: ',el('b',null,st.failed)),
+            st.total>0&&el('div',{className:'del-st'},'Progress: ',el('b',null,pct+'%'))
+          ),
+          el(RunControls,{running:st.running,paused:st.paused,onPause:()=>toggleDelPause(cfg.key),onCancel:()=>cancelDel(cfg.key)}),
+          st.status==='done'&&el('div',{className:'a-ok',style:{marginTop:8,fontSize:12}},'✓ Deletion complete — '+st.done+' items removed.'),
+          st.status==='partial'&&el('div',{className:'a-err',style:{marginTop:8,fontSize:12}},'⚠ Completed with '+st.failed+' failure(s). Check log.'),
+          // Re-fetch button after done/partial
+          !st.running&&(st.status==='done'||st.status==='partial')&&el('button',{className:'del-start-btn',style:{marginTop:8},onClick:()=>updDel(cfg.key,mkDel())},'Reset')
+        ),
+        // Log
+        st.logs.length>0&&el('div',{className:'del-log',ref:delLogRefs[cfg.key]},
+          st.logs.map((l,i)=>el('div',{key:i,className:l.cls},l.line))
+        )
+      )
+    );
+  }
+
+  function CleanupTab(){
+    return el('div',null,
+      el('div',{className:'del-warn-banner'},
+        el('svg',{width:16,height:16,viewBox:'0 0 16 16',fill:'none'},
+          el('path',{d:'M8 1.5L1 13.5h14L8 1.5z',stroke:'currentColor',strokeWidth:'1.2',strokeLinejoin:'round'}),
+          el('path',{d:'M8 6v4M8 11.5v.5',stroke:'currentColor',strokeWidth:'1.4',strokeLinecap:'round'})
+        ),
+        el('div',null,
+          el('strong',null,'Permanent deletion — '),
+          'Click "Fetch Items" on any card below to see what will be removed. You\'ll get a confirmation step before anything is deleted. Deletions cannot be undone.'
+        )
+      ),
+      DELS.map(cfg=>el(DeleteCard,{key:cfg.key,cfg}))
+    );
+  }
+
+  return el('div',null,
+    // Tab switcher
+    el('div',{className:'tab-row'},
+      el('button',{className:`tab-btn${tab==='import'?' on':''}`,onClick:()=>setTab('import')},'⬆ Import'),
+      el('button',{className:`tab-btn danger-tab${tab==='cleanup'?' on':''}`,onClick:()=>setTab('cleanup')},'🗑 Cleanup / Delete')
+    ),
+    tab==='import'?el(ImportTab,null):el(CleanupTab,null)
+  );
+}
+
+function App(){
+  const[theme,setTheme]=useState('light');
+  const[step,ss]=useState(0);const[mx,smx]=useState(0);
+  const[auth,sa]=useState(null);
+  const[prods,sP]=useState([]);const[fmap,sF]=useState({});
+  const[loaded,sL]=useState(false);const[prog,sPr]=useState(0);
+  const[selIds,setSel]=useState([]);
+  const[lis,sLis]=useState([]);const[maps,sMaps]=useState({});
+  const[tiers,sTiers]=useState({good:[],better:[],best:[],untiered:[]});
+
+  useEffect(()=>{document.documentElement.setAttribute('data-theme',theme);},[theme]);
+
+  const init=useCallback(async()=>{
+    const[p,f]=await Promise.all([loadProds(sPr),loadFams()]);
+    sP(p);sF(f);sL(true);
+  },[]);
+  const handleAuth=useCallback(acc=>{sa(acc);ss(1);smx(1);init();},[init]);
+  const go=n=>{if(n<=mx)ss(n);};
+  const adv=n=>{ss(n);smx(m=>Math.max(m,n));};
+
+  return React.createElement('div',null,
+    // Internal tool banner
+    React.createElement('div',{className:'internal-banner'},
+      React.createElement('svg',{width:14,height:14,viewBox:'0 0 14 14',fill:'none'},
+        React.createElement('rect',{x:1,y:1,width:12,height:12,rx:2,stroke:'currentColor',strokeWidth:1.3}),
+        React.createElement('path',{d:'M4 7h6M7 4v6',stroke:'currentColor',strokeWidth:1.3,strokeLinecap:'round'})
+      ),
+      React.createElement('span',null,'Internal Tool — Zuper CPQ Builder'),
+      React.createElement('span',{style:{marginLeft:'auto',opacity:.6,fontWeight:400}},new Date().getFullYear()+' · For internal use only')
+    ),
+    React.createElement('div',{className:'card'},
+      React.createElement('div',{className:'hd'},
+        React.createElement('div',{className:'logo'},'ZUPER'),
+        React.createElement('span',{className:'hd-t'},'CPQ Builder — Service Packages'),
+        auth&&React.createElement('div',{className:'acc-chip'},React.createElement('div',{className:'acc-dot'}),React.createElement('span',{className:'acc-nm'},auth.name)),
+        React.createElement('button',{className:'theme-btn',onClick:()=>setTheme(t=>t==='dark'?'light':'dark')},theme==='dark'?'☀ Light mode':'🌙 Dark mode')
+      ),
+      React.createElement(Steps,{step,maxStep:mx,setStep:go}),
+      React.createElement('div',{className:'body'},
+        step===0&&React.createElement(Step1,{onSuccess:handleAuth}),
+        step===1&&React.createElement(Step2,{onNext:()=>adv(2),selIds,setSelIds:setSel,allProds:prods,fmap,prodsLoaded:loaded,loadProgress:prog}),
+        step===2&&React.createElement(Step3,{selIds,allProds:prods,fmap,lineItems:lis,setLineItems:sLis,mappings:maps,setMappings:sMaps,onNext:()=>adv(3),onBack:()=>ss(1)}),
+        step===3&&React.createElement(Step4,{selIds,allProds:prods,fmap,lineItems:lis,mappings:maps,tiers,setTiers:sTiers,onNext:()=>adv(4),onBack:()=>ss(2)}),
+        step===4&&React.createElement(Step5,{auth,selIds,allProds:prods,lineItems:lis,mappings:maps,tiers,fmap,onBack:()=>ss(3)})
+      )
+    )
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+</body>
+</html>
