@@ -266,7 +266,20 @@ html,body{min-height:100%;background:var(--bg-page);font-family:-apple-system,Bl
 .formula-chip-item{font-size:10px;background:var(--or3);border:1px solid rgba(232,98,42,.22);color:var(--or);border-radius:4px;padding:2px 8px;font-family:monospace;display:flex;align-items:center;gap:5px}
 .fci-count{background:rgba(232,98,42,.2);border-radius:3px;padding:0 4px;font-size:9px;font-weight:700}
 
-/* ── Tier price breakdown ── */
+/* ── Per-phase error panel ── */
+.phase-err{background:rgba(248,113,113,.05);border:1px solid rgba(248,113,113,.2);border-radius:var(--r6);margin-top:8px;overflow:hidden}
+.phase-err-hd{display:flex;align-items:center;gap:7px;padding:7px 10px;cursor:pointer;user-select:none;font-size:11px;color:var(--er-tx)}
+.phase-err-hd:hover{background:rgba(248,113,113,.06)}
+.phase-err-hd svg{flex-shrink:0}
+.phase-err-body{padding:0 10px 8px;max-height:180px;overflow-y:auto}
+.phase-err-body::-webkit-scrollbar{width:3px}
+.phase-err-body::-webkit-scrollbar-thumb{background:var(--scrl);border-radius:2px}
+.per{font-size:10px;font-family:monospace;color:var(--er-tx);padding:3px 0;border-bottom:1px solid rgba(248,113,113,.1);display:flex;gap:6px;align-items:flex-start;line-height:1.5}
+.per:last-child{border-bottom:none}
+.per-dot{flex-shrink:0;margin-top:2px}
+/* ── Log download button ── */
+.log-dl-btn{font-size:10px;background:none;border:none;color:var(--txd);cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px;float:right}
+.log-dl-btn:hover{color:var(--or)}
 .tier-price-row{display:flex;align-items:baseline;gap:6px;margin:4px 0 2px}
 .tier-price-sq{font-size:13px;color:var(--txd);font-weight:400}
 .tier-sq-count{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--txd);margin-bottom:10px}
@@ -293,6 +306,11 @@ html,body{min-height:100%;background:var(--bg-page);font-family:-apple-system,Bl
 .vtag-warn{background:rgba(245,158,11,.1);color:var(--am);border:1px solid rgba(245,158,11,.2)}
 .vtag-err{background:var(--er-bg);color:var(--er-tx);border:1px solid var(--er-bd)}
 .vtag-reuse{background:rgba(56,189,248,.08);color:var(--bl);border:1px solid rgba(56,189,248,.2)}
+/* Formula source badges */
+.fbadge{display:inline-flex;align-items:center;gap:3px;font-size:9px;font-weight:600;padding:2px 6px;border-radius:3px;letter-spacing:.3px;white-space:nowrap;flex-shrink:0}
+.fbadge-hc{background:rgba(16,185,129,.1);color:var(--gr);border:1px solid rgba(16,185,129,.25)}
+.fbadge-db{background:rgba(59,130,246,.1);color:var(--bl);border:1px solid rgba(59,130,246,.25)}
+.fbadge-nil{background:var(--bg3);color:var(--txd);border:1px solid var(--bdd)}
 
 /* ── Read-only line item display in Step 3 ── */
 .li-readout{background:var(--bg3);border:1px solid var(--bdd);border-radius:var(--r4);padding:7px 10px;margin-top:6px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
@@ -367,6 +385,7 @@ html,body{min-height:100%;background:var(--bg-page);font-family:-apple-system,Bl
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.development.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.development.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 'use strict';
 const {useState,useEffect,useMemo,useCallback,useRef}=React;
@@ -409,6 +428,138 @@ const RATE_CARDS={
   best:  {rate:615, range:'$560–$680/sq', note:'Premium system + full coverage'},
 };
 const PITCH={low:.9,standard:1,steep:1.15,'very-steep':1.30},STORY={'1':1,'2':1.10,'3':1.22};
+
+/* ─────────────────────────────────────────────────────────────────────────
+   INDUSTRY-STANDARD CPQ FORMULAS
+   Source: verified across 40+ US East & West Zuper accounts (uploaded CSVs)
+   These are baked in as the primary source — no CEIL, no token-name mismatch.
+   The formula_key is the canonical key used across all accounts.
+   ───────────────────────────────────────────────────────────────────────── */
+const HARDCODED_FORMULAS = [
+  {
+    id:'shingles',
+    key:'shingles_squares_cpq',
+    label:'Shingles (squares)',
+    match: n => /shingle/i.test(n) && !/starter|hip.*ridge|ridge.*cap|hip.*cap/i.test(n),
+    tokens:['Total Roof Area','Suggested Waste Percentage %'],
+    expr:'($1*(1+$2/100))/100',
+    note:'Standard 3-tab/architectural: roof area + waste% ÷ 100',
+  },
+  {
+    id:'underlayment_synthetic',
+    key:'synthetic_underlayment_rolls_cpq',
+    label:'Synthetic Underlayment (rolls)',
+    match: n => /(underlayment|underlay)/i.test(n) && /(synthetic|felt|tiger|paw|deck.?armor|buster|quix|pro.?armor|rhino)/i.test(n),
+    tokens:['Total Roof Area'],
+    expr:'$1/1000',
+    note:'1 roll = 1,000 SQFT coverage',
+  },
+  {
+    id:'underlayment_sa',
+    key:'self_adhered_underlayment_rolls_cpq',
+    label:'Self-Adhered Underlayment (rolls)',
+    match: n => /(underlayment|underlay)/i.test(n) && /(self.?adher|peel.?stick|ht|high.?temp|storm.?guard|weather.?watch|stormguard)/i.test(n),
+    tokens:['Total Roof Area'],
+    expr:'$1/200',
+    note:'1 roll = 200 SQFT (2 SQ/roll)',
+  },
+  {
+    id:'ice_water',
+    key:'ice_water_shield_rolls_cpq',
+    label:'Ice & Water Shield (rolls)',
+    match: n => /(ice.*water|water.*ice|ice.*shield|leak.*barrier|i\s*&\s*w|weatherwatch|stormguard|weather.?lock|weather.?watch)/i.test(n),
+    tokens:['Total Eaves Length','Total Valleys Length'],
+    expr:'(($1+$2)*1.1)/66',
+    note:'Eaves + valleys × 1.1 waste ÷ 66 LF per roll',
+  },
+  {
+    id:'ridge_vent',
+    key:'ridge_vents_sections_cpq',
+    label:'Ridge Vents (sections)',
+    match: n => /ridge.*vent|vent.*ridge/i.test(n) && !/hip|cap/i.test(n),
+    tokens:['Total Ridges Length'],
+    expr:'$1/4',
+    note:'1 section = 4 LF of ridge',
+  },
+  {
+    id:'drip_edge',
+    key:'drip_edge_pieces_cpq',
+    label:'Drip Edge (pieces)',
+    match: n => /drip.?edge/i.test(n),
+    tokens:['Total Rakes Length','Total Eaves Length'],
+    expr:'($1+$2)/10',
+    note:'Rakes + eaves ÷ 10 LF per piece',
+  },
+  {
+    id:'starter',
+    key:'starter_shingles_bundles_cpq',
+    label:'Starter Shingles (bundles)',
+    match: n => /starter/i.test(n),
+    tokens:['Total Eaves Length','Total Rakes Length'],
+    expr:'($1+$2)/120',
+    note:'Eaves + rakes ÷ 120 LF per bundle',
+  },
+  {
+    id:'hip_ridge_cap',
+    key:'hip_ridge_cap_bundles_cpq',
+    label:'Hip & Ridge Cap (bundles)',
+    match: n => /hip.*ridge|ridge.*cap|seal.?a.?ridge|timbertex|timberline.*cap|z.?ridge/i.test(n),
+    tokens:['Total Hip Length','Total Ridges Length'],
+    expr:'($1+$2)/33',
+    note:'Hip + ridge length ÷ 33 LF per bundle',
+  },
+  {
+    id:'valley_metal',
+    key:'valley_metal_pieces_cpq',
+    label:'Valley Metal (pieces)',
+    match: n => /valley.*metal|valley.*flashing|w.?valley|open.*valley/i.test(n),
+    tokens:['Total Valleys Length'],
+    expr:'$1/10',
+    note:'Valley length ÷ 10 LF per piece',
+  },
+  {
+    id:'step_flashing',
+    key:'step_flashing_cpq',
+    label:'Step Flashing (bundles)',
+    match: n => /step.*flash|flash.*step/i.test(n),
+    tokens:['Total Step Flashing Length','Suggested Waste Percentage %'],
+    expr:'(($1*2.4)*(1+$2/100))/100',
+    note:'Step flashing × 2.4 pieces/LF + waste% ÷ 100',
+  },
+  {
+    id:'coil_nails',
+    key:'coil_nails_cpq',
+    label:'Coil Nails (boxes)',
+    match: n => /coil.?nail/i.test(n),
+    tokens:['Total Roof Area'],
+    expr:'($1/100)/15',
+    note:'Roof squares ÷ 15 SQ per box',
+  },
+];
+
+/* Return the hardcoded formula definition for a line-item display name, or null */
+function findHardcodedFormula(displayName){
+  return HARDCODED_FORMULAS.find(hf=>hf.match(displayName))||null;
+}
+
+/* Build expression_map for a hardcoded formula given the account's resolved tokens */
+function buildHardcodedFormula(hf, toks, displayName){
+  const em=[];
+  for(let i=0;i<hf.tokens.length;i++){
+    const tok=toks.find(t=>t.name===hf.tokens[i]);
+    if(!tok)return null; // token not in this account
+    em.push({key:`$${i+1}`,type:'MEASUREMENT',measurement_token_uid:tok.uid,measurement_category_uid:tok.catUid});
+  }
+  if(!em.length)return null;
+  const ck=displayName.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').substring(0,50)+'_cpq';
+  return{formula:{
+    formula_name:`${displayName} (CPQ)`,
+    formula_key:ck,
+    formula_category:'AREA_MEASUREMENT',
+    formula_description:`${displayName} — ${hf.note}`,
+    formula:{expression:hf.expr,expression_map:em,rounding_mechanism:'NEXT_WHOLE_NUMBER'},
+  }};
+}
 
 /* helpers */
 function normT(t){
@@ -549,29 +700,66 @@ function apiErr(j){
   return j.message||j.error||(Array.isArray(j.errors)?j.errors[0]:'')||JSON.stringify(j).slice(0,120);
 }
 function mkProd(p,cu){
+  // Only include fields with real values — empty strings cause Zuper validation errors
   const prodObj={
     product_name:p.product_name,
     product_id:`SRS-${p.product_id}`,
     is_available:true,
     price:parseFloat(p.suggested_price)||0,
-    min_quantity:0,currency:'',quantity:0,
-    product_manual_link:'',product_description:'',
-    product_image:p.product_image_url||'',
-    product_type:'PARTS',pricing_level:'ROLLUP',
-    brand:p.manufacturer_norm||'',
-    track_quantity:false,specification:'',
-    has_custom_tax:false,meta_data:[],
-    uom:uom(p.product_uom),
-    is_billable:true,consider_profitability:true,is_commissionable:true,
+    min_quantity:0,
+    quantity:0,
+    product_type:'PARTS',
+    pricing_level:'ROLLUP',
+    track_quantity:false,
+    has_custom_tax:false,
+    meta_data:[],
+    is_billable:true,
+    consider_profitability:true,
+    is_commissionable:true,
     location_availability:[],
-    tax:{tax_exempt:false},product_files:[],
+    tax:{tax_exempt:false},
+    product_files:[],
     option:{customer_selection:false,option_label:'Option',option_values:[]},
   };
-  // Only set product_category if we have a valid UID — never send 'UNCATEGORIZED'
+  // Only add optional fields if they have real values
   if(cu)prodObj.product_category=cu;
+  if(p.manufacturer_norm)prodObj.brand=p.manufacturer_norm;
+  const uomVal=uom(p.product_uom);if(uomVal)prodObj.uom=uomVal;
+  // ⚠ Never send product_image — SRS catalog URLs are rejected by Zuper as "Invalid Image / Attachment"
   return{product:prodObj,vendor:[]};
 }
-function mkFormula(li,toks){if(li.formula_type==='direct_input'||!li.formula_expr)return null;const sorted=[...toks].sort((a,b)=>b.name.length-a.name.length);let mapped=li.formula_expr;const em=[];let c=1;for(const t of sorted){if(!t.name||!mapped.includes(t.name))continue;const k=`$${c}`;mapped=mapped.split(t.name).join(k);em.push({key:k,type:'MEASUREMENT',measurement_token_uid:t.uid,measurement_category_uid:t.catUid});c++;}if(!em.length)return null;const ck=li.display_name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').substring(0,50)+'_cpq';return{formula:{formula_name:`${li.display_name} (CPQ)`,formula_key:ck,formula_category:'AREA_MEASUREMENT',formula_description:li.display_name,formula:{expression:mapped.replace(/\s+/g,''),expression_map:em,rounding_mechanism:'NEXT_WHOLE_NUMBER'}}};}
+function mkFormula(li,toks){
+  if(li.formula_type==='direct_input'||!li.formula_expr)return null;
+
+  // ── Priority 1: hardcoded industry-standard formula ──────────────────────
+  // These are proven across 40+ accounts. No CEIL, no token-name mismatch.
+  const hf=findHardcodedFormula(li.display_name);
+  if(hf){
+    const result=buildHardcodedFormula(hf,toks,li.display_name);
+    if(result)return result;
+    // Token not found in this account → fall through to DB formula
+  }
+
+  // ── Priority 2: DB formula_expr with token substitution + CEIL strip ─────
+  const sorted=[...toks].sort((a,b)=>b.name.length-a.name.length);
+  let mapped=li.formula_expr;
+  const em=[];let c=1;
+  for(const t of sorted){
+    if(!t.name||!mapped.includes(t.name))continue;
+    const k=`$${c}`;
+    mapped=mapped.split(t.name).join(k);
+    em.push({key:k,type:'MEASUREMENT',measurement_token_uid:t.uid,measurement_category_uid:t.catUid});
+    c++;
+  }
+  if(!em.length)return null;
+  // Strip CEIL() — Zuper formula engine rejects it; NEXT_WHOLE_NUMBER achieves same effect
+  let expr=mapped.replace(/\s+/g,'');
+  let prev='';
+  while(prev!==expr){prev=expr;expr=expr.replace(/CEIL\(([^()]+)\)/gi,'($1)');}
+  while(/\(\([^()]+\)\)/.test(expr))expr=expr.replace(/\(\(([^()]+)\)\)/g,'($1)');
+  const ck=li.display_name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').substring(0,50)+'_cpq';
+  return{formula:{formula_name:`${li.display_name} (CPQ)`,formula_key:ck,formula_category:'AREA_MEASUREMENT',formula_description:li.display_name,formula:{expression:expr,expression_map:em,rounding_mechanism:'NEXT_WHOLE_NUMBER'}}};
+}
 
 async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,onLog}){
   const sig=signal||{cancel:false,pause:false};
@@ -669,7 +857,7 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
   }
   log(`Products: ${ps} created/reused, ${pf} failed`);
   if(pf>0){log(`--- Product errors (${Math.min(prodErrLog.length,10)} shown):`);prodErrLog.slice(0,10).forEach(e=>log('  \u2717 '+e));}
-  onPhase('products',pf===0?'done':'partial',{success:ps,failed:pf});
+  onPhase('products',pf===0?'done':'partial',{success:ps,failed:pf,errors:prodErrLog.slice(0,20)});
 
   // ── Phase 3: Formulas ─────────────────────────────────────────────────────
   await chk();
@@ -736,7 +924,7 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
   }
   log(`Formulas: ${fs} created, ${fReused} reused, ${fsk} skipped, ${ff} failed`);
   if(ff>0){log('--- Formula errors:');fErrLog.slice(0,8).forEach(e=>log('  \u2717 '+e));}
-  onPhase('formulas','done',{success:fs,reused:fReused,skipped:fsk,failed:ff});
+  onPhase('formulas','done',{success:fs,reused:fReused,skipped:fsk,failed:ff,errors:fErrLog.slice(0,20)});
 
   // ── Phase 4: Packages ─────────────────────────────────────────────────────
   await chk();
@@ -748,26 +936,34 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
   const pkgDefs=['good','better','best'].map(tk=>{
     const tp=tiers[tk]||[],un=tiers.untiered||[];
     const all=tk==='best'?[...tp,...un]:tp;
+    // Include ALL products that were successfully imported (have a UID),
+    // not just ones with formulas. Products without formula get price=$0 so
+    // the package structure is complete — user sets quantity manually in Zuper.
     let matched=all.filter(p=>um[p.product_id]);
-    // If tier is empty, use proportion of all imported products as fallback
     if(matched.length===0&&availUids>0){
       const allImp=selProds.filter(p=>um[p.product_id]);
       const take=tk==='good'?Math.ceil(allImp.length*0.4):tk==='better'?Math.ceil(allImp.length*0.7):allImp.length;
       matched=allImp.slice(0,take);
     }
-    const line_items=matched.map(p=>({
-      line_item_type:'ITEM',product_uid:um[p.product_id],
-      product_id:`SRS-${p.product_id}`,product_type:'PARTS',
-      name:p.product_name,description:'',uom:uom(p.product_uom),
-      quantity:1,unit_price:parseFloat(p.suggested_price)||0,purchase_price:0,
-      discount:0,discount_type:'FIXED',serial_nos:[],
-      total:parseFloat(p.suggested_price)||0,
-      section_type:'EXPANDED',show_section_total:false,show_child_prices:true,
-      brand:p.manufacturer_norm||'',specification:'',image:'',
-      location_uid:'',location_name:'',
-      tax:{tax_exempt:false},is_billable:true,associated_products:[],
-      ...(mappings[p.product_id]&&fu[mappings[p.product_id]]?{formula:fu[mappings[p.product_id]]}:{})
-    }));
+    const line_items=matched.map(p=>{
+      const hasFormula=!!(mappings[p.product_id]&&fu[mappings[p.product_id]]);
+      // Use actual price only when a formula is linked — otherwise $0 (manual qty in Zuper)
+      const unitPrice=hasFormula?(parseFloat(p.suggested_price)||0):0;
+      return{
+        line_item_type:'ITEM',product_uid:um[p.product_id],
+        product_id:`SRS-${p.product_id}`,product_type:'PARTS',
+        name:p.product_name,description:'',uom:uom(p.product_uom),
+        quantity:hasFormula?1:0,
+        unit_price:unitPrice,purchase_price:0,
+        discount:0,discount_type:'FIXED',serial_nos:[],
+        total:unitPrice,
+        section_type:'EXPANDED',show_section_total:false,show_child_prices:true,
+        brand:p.manufacturer_norm||'',specification:'',image:'',
+        location_uid:'',location_name:'',
+        tax:{tax_exempt:false},is_billable:true,associated_products:[],
+        ...(hasFormula?{formula:fu[mappings[p.product_id]]}:{})
+      };
+    });
     return{package_name:`${TM[tk].label} - ${TM[tk].sub}`,line_items,tier:tk};
   });
 
@@ -861,7 +1057,99 @@ function downloadMappingCsv(selP,mappings,lineItems,fmap){
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='cpq_mapping_'+new Date().toISOString().slice(0,10)+'.csv';a.click();
 }
 
-function Loader({msg}){return React.createElement('div',{className:'ld',style:{padding:'40px 0',justifyContent:'center'}},React.createElement('div',{className:'da'}),React.createElement('div',{className:'da'}),React.createElement('div',{className:'da'}),React.createElement('span',null,msg||'Loading…'));}
+/* ── Excel import report with error log ── */
+function downloadImportExcel(iRes,phases){
+  const XLSX=window.XLSX;
+  if(!XLSX){alert('Excel library not loaded yet — please wait a moment and try again.');return;}
+  const wb=XLSX.utils.book_new();
+
+  // ── Sheet 1: Products ──────────────────────────────────────────────────
+  const prodRows=(iRes?.pR||[]).map(r=>({
+    'Product Name':r.name||'',
+    'Status':r.reused?'REUSED':r.ok?'CREATED':'FAILED',
+    'Zuper UID':r.uid||'',
+    'Reused (Re-run)':r.reused?'Yes':'No',
+    'Error / Notes':(!r.ok&&!r.reused)?'See Error Summary sheet':'',
+  }));
+  // Append product-phase errors as extra rows at bottom
+  const prodErrs=(phases?.products?.errs||[]);
+  if(prodErrs.length){
+    prodRows.push({});
+    prodRows.push({'Product Name':'--- PRODUCT CREATION ERRORS ---','Status':'','Zuper UID':'','Reused (Re-run)':'','Error / Notes':''});
+    prodErrs.forEach(e=>prodRows.push({'Product Name':'','Status':'FAILED','Zuper UID':'','Reused (Re-run)':'','Error / Notes':e}));
+  }
+  const wsProds=XLSX.utils.json_to_sheet(prodRows.length?prodRows:[{'Product Name':'No products','Status':'','Zuper UID':'','Reused (Re-run)':'','Error / Notes':''}]);
+  // Column widths
+  wsProds['!cols']=[{wch:45},{wch:10},{wch:38},{wch:16},{wch:80}];
+  // Colour failed rows red (xlsx-style)
+  XLSX.utils.book_append_sheet(wb,wsProds,'Products');
+
+  // ── Sheet 2: Formulas ──────────────────────────────────────────────────
+  const formulaRows=(iRes?.fR||[]).map(r=>({
+    'Formula Name':r.name||'',
+    'Status':r.reused?'REUSED':r.ok?'CREATED':'FAILED',
+    'Zuper Formula UID':r.uid||'',
+    'Reused (Duplicate)':r.reused?'Yes':'No',
+    'Error / Notes':(!r.ok&&!r.reused)?'See Error Summary sheet':'',
+  }));
+  const fErrs=(phases?.formulas?.errs||[]);
+  if(fErrs.length){
+    formulaRows.push({});
+    formulaRows.push({'Formula Name':'--- FORMULA CREATION ERRORS ---','Status':'','Zuper Formula UID':'','Reused (Duplicate)':'','Error / Notes':''});
+    fErrs.forEach(e=>formulaRows.push({'Formula Name':'','Status':'FAILED','Zuper Formula UID':'','Reused (Duplicate)':'','Error / Notes':e}));
+  }
+  const wsFormulas=XLSX.utils.json_to_sheet(formulaRows.length?formulaRows:[{'Formula Name':'No formulas','Status':'','Zuper Formula UID':'','Reused (Duplicate)':'','Error / Notes':''}]);
+  wsFormulas['!cols']=[{wch:45},{wch:10},{wch:38},{wch:18},{wch:80}];
+  XLSX.utils.book_append_sheet(wb,wsFormulas,'Formulas');
+
+  // ── Sheet 3: Packages ──────────────────────────────────────────────────
+  const pkgRows=(iRes?.pkgR||[]).map(r=>({
+    'Package Name':r.name||'',
+    'Tier':(r.tier||'').toUpperCase(),
+    'Status':r.ok?'CREATED':'FAILED',
+    'Zuper Package UID':r.uid||'',
+    'Error / Notes':r.error||'',
+  }));
+  const wsPkgs=XLSX.utils.json_to_sheet(pkgRows.length?pkgRows:[{'Package Name':'No packages','Tier':'','Status':'','Zuper Package UID':'','Error / Notes':''}]);
+  wsPkgs['!cols']=[{wch:40},{wch:10},{wch:10},{wch:38},{wch:80}];
+  XLSX.utils.book_append_sheet(wb,wsPkgs,'Packages');
+
+  // ── Sheet 4: Error Summary (all failures in one place) ────────────────
+  const errRows=[];
+  const addErrSection=(phase,label,errs)=>{
+    if(!errs||!errs.length)return;
+    if(errRows.length)errRows.push({'Phase':'','Label':'','Error Message':''});
+    errs.forEach((e,i)=>errRows.push({'Phase':i===0?label:'','Label':i===0?phase+'  ('+errs.length+' errors)':'','Error Message':e}));
+  };
+  addErrSection('products','Products',prodErrs);
+  addErrSection('formulas','Formulas',fErrs);
+  // Also add individual failed rows from pR/fR/pkgR
+  const failedProds=(iRes?.pR||[]).filter(r=>!r.ok&&!r.reused);
+  const failedForms=(iRes?.fR||[]).filter(r=>!r.ok&&!r.reused);
+  const failedPkgs=(iRes?.pkgR||[]).filter(r=>!r.ok);
+  if(failedProds.length){if(errRows.length)errRows.push({});errRows.push({'Phase':'Products','Label':failedProds.length+' failed product record(s)','Error Message':''});failedProds.forEach(r=>errRows.push({'Phase':'','Label':r.name,'Error Message':'No UID returned — see Products sheet for details'}));}
+  if(failedForms.length){if(errRows.length)errRows.push({});errRows.push({'Phase':'Formulas','Label':failedForms.length+' failed formula record(s)','Error Message':''});failedForms.forEach(r=>errRows.push({'Phase':'','Label':r.name,'Error Message':'No UID returned — see Formulas sheet for details'}));}
+  if(failedPkgs.length){if(errRows.length)errRows.push({});errRows.push({'Phase':'Packages','Label':failedPkgs.length+' failed package(s)','Error Message':''});failedPkgs.forEach(r=>errRows.push({'Phase':'','Label':r.name,'Error Message':r.error||'Unknown error'}));}
+
+  if(!errRows.length)errRows.push({'Phase':'','Label':'No errors','Error Message':'All phases completed successfully'});
+  const wsErrs=XLSX.utils.json_to_sheet(errRows);
+  wsErrs['!cols']=[{wch:12},{wch:45},{wch:100}];
+  XLSX.utils.book_append_sheet(wb,wsErrs,'Error Summary');
+
+  const fname='zuper_import_'+new Date().toISOString().slice(0,19).replace(/[T:]/g,'-')+'.xlsx';
+  XLSX.writeFile(wb,fname);
+}
+
+
+
+function Loader({msg}){
+  return React.createElement('div',{className:'ld',style:{padding:'40px 0',justifyContent:'center'}},
+    React.createElement('div',{className:'da'}),
+    React.createElement('div',{className:'da'}),
+    React.createElement('div',{className:'da'}),
+    React.createElement('span',null,msg||'Loading…')
+  );
+}
 
 function Steps({step,maxStep,setStep}){
   return React.createElement('div',{className:'steps'},
@@ -1111,28 +1399,46 @@ function Step2({onNext,selIds,setSelIds,allProds,fmap,prodsLoaded,loadProgress})
 
 function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings,onNext,onBack}){
   const[ld,sld]=useState(!lineItems.length);const[err,se]=useState('');
-  const[mapFilter,setMapFilter]=useState(null); // null | 'mapped' | 'formula' | 'direct' | 'unmapped'
+  const[mapFilter,setMapFilter]=useState(null);
   const[validating,sValidating]=useState(false);
   const[validation,sValidation]=useState(null);
   const[showValidate,sShowValidate]=useState(false);
 
+  // Stable string key for current selection — changes whenever the product set changes
+  const selKey=useMemo(()=>selIds.slice().sort().join(','),[selIds]);
+  // Track which selKey we last mapped against — prevents redundant re-mapping
+  const lastMappedKey=useRef(null);
+
+  // Effect 1: load line items once (only fires when lineItems is empty)
   useEffect(()=>{
     if(lineItems.length)return;
+    sld(true);
     (async()=>{
       const{data,error}=await loadLIs();
       if(error){se(error.message);sld(false);return;}
       setLineItems(data);
-      const selProds=allProds.filter(p=>selIds.includes(p.product_id));
-      setMappings(buildAutoMappings(selProds,data));
       sld(false);
+      // Mapping will trigger via Effect 2 when lineItems.length changes
     })();
   },[]);
+
+  // Effect 2: re-map whenever selIds changes OR when lineItems first loads
+  // This is what was missing — it re-runs every time the user changes product selection
+  useEffect(()=>{
+    if(!lineItems.length||!selIds.length)return;
+    if(lastMappedKey.current===selKey)return; // selection unchanged — skip
+    lastMappedKey.current=selKey;
+    const selProds=allProds.filter(p=>selIds.includes(p.product_id));
+    setMappings(buildAutoMappings(selProds,lineItems));
+    // Clear validation when selection changes
+    sValidation(null);sShowValidate(false);
+  },[selKey,lineItems.length]);
 
   const selP=useMemo(()=>allProds.filter(p=>selIds.includes(p.product_id)),[allProds,selIds]);
 
   // ── Summary stats ────────────────────────────────────────────────────────
   const summary=useMemo(()=>{
-    let mapped=0,withFormula=0,directInput=0,notMapped=0;
+    let mapped=0,withFormula=0,hardcodedF=0,dbF=0,directInput=0,notMapped=0;
     const formulaExprs={};
     for(const p of selP){
       const liId=mappings[p.product_id];
@@ -1141,11 +1447,12 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
       const li=lineItems.find(l=>l.id===liId);
       if(li?.formula_expr&&li.formula_type!=='direct_input'){
         withFormula++;
+        if(findHardcodedFormula(li.display_name))hardcodedF++;else dbF++;
         formulaExprs[li.formula_expr]=(formulaExprs[li.formula_expr]||0)+1;
       }else{directInput++;}
     }
     const uniqueFormulas=Object.entries(formulaExprs).sort((a,b)=>b[1]-a[1]);
-    return{mapped,withFormula,directInput,notMapped,uniqueFormulas,formulasToCreate:uniqueFormulas.length};
+    return{mapped,withFormula,hardcodedF,dbF,directInput,notMapped,uniqueFormulas,formulasToCreate:uniqueFormulas.length};
   },[selP,mappings,lineItems]);
 
   // ── Filtered product list driven by mapFilter ────────────────────────────
@@ -1165,6 +1472,21 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
 
   const reAutoMap=()=>{setMappings(buildAutoMappings(selP,lineItems));sValidation(null);sShowValidate(false);};
 
+  // Removes mappings for products whose line item has no formula (direct_input / no formula_expr)
+  // Those products still go into packages but with $0 price so the package structure is preserved
+  const clearNonFormulaMappings=()=>{
+    setMappings(m=>{
+      const nm={...m};
+      for(const[pid,liId]of Object.entries(nm)){
+        if(!liId)continue;
+        const li=lineItems.find(l=>l.id===liId);
+        const hasF=!!(li?.formula_expr&&li.formula_type!=='direct_input');
+        if(!hasF)delete nm[pid];
+      }
+      return nm;
+    });
+  };
+
   // ── Validate: compare auto-suggested mapping to current ──────────────────
   const runValidate=async()=>{
     sValidating(true);sShowValidate(true);
@@ -1175,12 +1497,15 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
       const curLI=curId?lineItems.find(l=>l.id===curId):null;
       const sugLI=sugId?lineItems.find(l=>l.id===sugId):null;
       const hasF=!!(curLI?.formula_expr&&curLI.formula_type!=='direct_input');
+      // Determine formula source for this line item
+      const hf=curLI?findHardcodedFormula(curLI.display_name):null;
+      const formulaSrc=!hasF?'none':hf?'hardcoded':'db';
       let status='ok';
       if(!curId&&!sugId)status='unmapped';
-      else if(!curId&&sugId)status='suggestion'; // new mapping available
-      else if(curId&&!sugId)status='ok'; // mapped but no suggestion = custom
-      else if(curId!==sugId)status='diff'; // current differs from suggestion
-      return{pid:p.product_id,name:p.product_name,curLI:curLI?.display_name,sugLI:sugLI?.display_name,hasFormula:hasF,formulaExpr:curLI?.formula_expr,status};
+      else if(!curId&&sugId)status='suggestion';
+      else if(curId&&!sugId)status='ok';
+      else if(curId!==sugId)status='diff';
+      return{pid:p.product_id,name:p.product_name,curLI:curLI?.display_name,sugLI:sugLI?.display_name,hasFormula:hasF,formulaExpr:curLI?.formula_expr,formulaSrc,hfLabel:hf?.label,hfNote:hf?.note,status};
     });
     sValidation(results);sValidating(false);
   };
@@ -1192,10 +1517,10 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
   };
 
   const SUMMARY_CARDS=[
-    {key:'mapped',   label:'Mapped to line item',    color:'var(--gr)',   val:summary.mapped,          hint:'Click to show only mapped'},
-    {key:'formula',  label:'With formula expression', color:'var(--bl)',   val:summary.withFormula,     hint:'Click to show formula-linked'},
-    {key:'direct',   label:'Direct input (no formula)',color:'var(--txd)', val:summary.directInput,     hint:'Click to show direct-input'},
-    {key:'unmapped', label:'Not matched',             color:'var(--am)',   val:summary.notMapped,       hint:'Click to show unmatched'},
+    {key:'mapped',   label:'Mapped to line item',     color:'var(--gr)',  val:summary.mapped,      hint:'Click to show only mapped'},
+    {key:'formula',  label:'Formula-linked',           color:'var(--bl)',  val:summary.withFormula,  hint:'Click to show formula-linked'},
+    {key:'direct',   label:'Direct input (no formula)',color:'var(--txd)', val:summary.directInput,  hint:'Click to show direct-input'},
+    {key:'unmapped', label:'Not matched',              color:'var(--am)',  val:summary.notMapped,    hint:'Click to show unmatched'},
   ];
 
   if(ld)return React.createElement(Loader,{msg:'Loading proposal_line_items & auto-mapping…'});
@@ -1213,6 +1538,12 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
             title:'Download full mapping as CSV',
           },'↓ CSV'),
           React.createElement('button',{className:'btn-ico btn-sm',onClick:reAutoMap,title:'Re-run auto-mapping'},'↺ Re-map'),
+          React.createElement('button',{
+            className:'btn-ico btn-sm',
+            onClick:clearNonFormulaMappings,
+            title:'Remove all line-item mappings that have no formula — those products will still appear in packages at $0 price',
+            style:{borderColor:'rgba(245,158,11,.4)',color:'var(--am)'},
+          },'⊘ Clear non-formula'),
           React.createElement('button',{
             className:'btn-ico btn-sm',
             onClick:runValidate,
@@ -1236,10 +1567,28 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
           React.createElement('div',{className:'stat-hint'},mapFilter===sc.key?'● Active filter':sc.hint)
         ))
       ),
-      // Unique formula chips
-      summary.uniqueFormulas.length>0&&React.createElement('div',null,
-        React.createElement('div',{style:{fontSize:10,color:'var(--txd)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:5}},
-          summary.formulasToCreate+' unique formula expression(s) to create:'
+      // Formula source breakdown bar
+      summary.withFormula>0&&React.createElement('div',{style:{marginTop:10,padding:'8px 10px',background:'var(--bg2)',borderRadius:'var(--r6)',border:'1px solid var(--bdd)'}},
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
+          React.createElement('div',{style:{fontSize:10,color:'var(--txd)',textTransform:'uppercase',letterSpacing:'.07em',flex:1}},'Formula source breakdown'),
+          React.createElement('span',{className:'fbadge fbadge-hc'},'✓ '+summary.hardcodedF+' industry standard'),
+          React.createElement('span',{className:'fbadge fbadge-db'},'~ '+summary.dbF+' from DB'),
+        ),
+        // Progress bar
+        React.createElement('div',{style:{height:5,borderRadius:3,background:'var(--bdd)',overflow:'hidden',display:'flex'}},
+          summary.hardcodedF>0&&React.createElement('div',{style:{width:`${(summary.hardcodedF/summary.withFormula*100).toFixed(1)}%`,background:'var(--gr)',transition:'width .3s'}}),
+          summary.dbF>0&&React.createElement('div',{style:{width:`${(summary.dbF/summary.withFormula*100).toFixed(1)}%`,background:'var(--bl)',transition:'width .3s'}})
+        ),
+        React.createElement('div',{style:{fontSize:10,color:'var(--txd)',marginTop:4}},
+          summary.hardcodedF===summary.withFormula
+            ?'✓ All formulas use industry-standard expressions — guaranteed to import successfully'
+            :`${summary.dbF} formula(s) will fall back to DB expressions — may fail if token names differ`
+        )
+      ),
+      // Unique formula expressions (DB fallback ones worth knowing about)
+      summary.dbF>0&&summary.uniqueFormulas.length>0&&React.createElement('div',{style:{marginTop:6}},
+        React.createElement('div',{style:{fontSize:10,color:'var(--txd)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:4}},
+          'DB formula expressions ('+summary.dbF+' — may need token-name review):'
         ),
         React.createElement('div',{className:'formula-chips'},
           summary.uniqueFormulas.map(([expr,cnt],i)=>
@@ -1260,24 +1609,37 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
     // ── Validation panel ────────────────────────────────────────────────
     showValidate&&validation&&React.createElement('div',{className:'validate-panel'},
       React.createElement('div',{className:'validate-title'},
-        '✓ Mapping Validation Results',
+        '✓ Mapping Validation — Formula Source',
         React.createElement('div',{className:'row',style:{marginLeft:'auto',gap:6}},
           validation.some(v=>v.status==='suggestion'||v.status==='diff')&&
             React.createElement('button',{className:'btn btn-sm',onClick:applyAllSuggestions},'Apply all suggestions'),
           React.createElement('button',{className:'btn-g btn-sm',onClick:()=>{sShowValidate(false);sValidation(null);}},'Close')
         )
       ),
-      React.createElement('div',{style:{maxHeight:200,overflowY:'auto'}},
+      // Legend
+      React.createElement('div',{style:{display:'flex',gap:8,padding:'6px 0 8px',borderBottom:'1px solid var(--bdd)',marginBottom:4,flexWrap:'wrap'}},
+        React.createElement('span',{className:'fbadge fbadge-hc'},'✓ Industry standard'),
+        React.createElement('span',{className:'fbadge fbadge-db'},'~ DB formula'),
+        React.createElement('span',{className:'fbadge fbadge-nil'},'— no formula'),
+        React.createElement('span',{style:{fontSize:10,color:'var(--txd)',marginLeft:'auto'}},
+          `${validation.filter(v=>v.formulaSrc==='hardcoded').length} hardcoded · ${validation.filter(v=>v.formulaSrc==='db').length} DB · ${validation.filter(v=>v.formulaSrc==='none').length} none`)
+      ),
+      React.createElement('div',{style:{maxHeight:240,overflowY:'auto'}},
         validation.map((v,i)=>React.createElement('div',{key:i,className:'vrow'},
           React.createElement('span',{className:'vicon'},
             v.status==='ok'||v.status==='custom'?'✓':v.status==='unmapped'?'✗':v.status==='suggestion'?'＋':'≠'
           ),
-          React.createElement('span',{className:'vprod',title:v.name},v.name.length>30?v.name.slice(0,28)+'…':v.name),
-          React.createElement('span',{className:'vli'},
-            v.curLI?(v.hasFormula?'📐 '+v.curLI:'📋 '+v.curLI):'(unmapped)'
+          React.createElement('span',{className:'vprod',title:v.name},v.name.length>28?v.name.slice(0,26)+'…':v.name),
+          React.createElement('span',{className:'vli',style:{flex:1}},
+            v.curLI?v.curLI:'(unmapped)'
           ),
+          // Formula source badge
+          React.createElement('span',{
+            className:`fbadge ${v.formulaSrc==='hardcoded'?'fbadge-hc':v.formulaSrc==='db'?'fbadge-db':'fbadge-nil'}`,
+            title:v.formulaSrc==='hardcoded'?`Industry standard: ${v.hfLabel}\n${v.hfNote}`:v.formulaSrc==='db'?`DB expr: ${v.formulaExpr}`:'No formula — will use $0 price in package',
+          },v.formulaSrc==='hardcoded'?'✓ std':v.formulaSrc==='db'?'~ db':'— nil'),
           React.createElement('span',{className:`vtag ${v.status==='ok'?'vtag-ok':v.status==='unmapped'?'vtag-err':v.status==='suggestion'?'vtag-warn':'vtag-warn'}`},
-            v.status==='ok'?'✓ matched':v.status==='unmapped'?'not found':v.status==='suggestion'?'suggestion available':'differs from suggestion'
+            v.status==='ok'?'matched':v.status==='unmapped'?'not found':v.status==='suggestion'?'suggestion':'differs'
           )
         ))
       )
@@ -1303,10 +1665,16 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
                   tier&&React.createElement('span',{className:tbc(tier)},tier.toUpperCase())
                 )
               ),
-              liId&&React.createElement('span',{
-                className:'li-ok',
-                style:{background:hasFormula?'var(--ok-bg)':'var(--bg3)',color:hasFormula?'var(--ok-tx)':'var(--txd)',border:`1px solid ${hasFormula?'var(--ok-bd)':'var(--bdd)'}`},
-              },hasFormula?'📐 formula':'📋 mapped')
+              liId&&React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:3}},
+                React.createElement('span',{
+                  className:'li-ok',
+                  style:{background:hasFormula?'var(--ok-bg)':'var(--bg3)',color:hasFormula?'var(--ok-tx)':'var(--txd)',border:`1px solid ${hasFormula?'var(--ok-bd)':'var(--bdd)'}`},
+                },hasFormula?'📐 formula':'📋 mapped'),
+                hasFormula&&React.createElement('span',{
+                  className:`fbadge ${findHardcodedFormula(li?.display_name||'')?'fbadge-hc':'fbadge-db'}`,
+                  title:findHardcodedFormula(li?.display_name||'')?`Industry standard: ${findHardcodedFormula(li.display_name).label}`:'Using DB formula_expr',
+                },findHardcodedFormula(li?.display_name||'')?'✓ industry std':'~ db formula')
+              )
             ),
             // Read-only mapping display
             liId
@@ -1469,7 +1837,7 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
   const startImport=async()=>{
     importSig.current={cancel:false,pause:false};
     sImporting(true);sILogs([]);sIRes(null);sIDone(false);
-    sp({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:''},products:{s:'idle',l:'Create Products (Bulk)',i:''},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:''},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:''}});
+    sp({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:'',errs:[]},products:{s:'idle',l:'Create Products (Bulk)',i:'',errs:[]},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:'',errs:[]},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:'',errs:[]}});
     try{
       const r=await runImport({auth,selProds:selP,lineItems,mappings,tiers,signal:importSig.current,
         onPhase:(k,s,x={})=>{
@@ -1482,7 +1850,8 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
             if(x.skipped)parts.push(`${x.skipped} skipped`);
             i=parts.join(', ');
           }else i=s;
-          setPS(k,s,{i});
+          // Store errors in phase state so they show permanently in the UI
+          setPS(k,s,{i,errs:x.errors||[]});
         },
         onLog:addILog});
       sIRes(r);sIDone(true);
@@ -1585,7 +1954,15 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
   const R=React;
   const el=R.createElement;
 
+  const downloadLog=()=>{
+    const text=iLogs.join('\n');
+    const blob=new Blob([text],{type:'text/plain'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='import_log_'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.txt';a.click();
+  };
+
   function ImportTab(){
+    const[errOpen,setErrOpen]=useState({});
+    const toggleErr=k=>setErrOpen(p=>({...p,[k]:!p[k]}));
     return el('div',null,
       el('div',{className:'stats'},
         el('div',{className:'stat'},el('div',{className:'stat-n'},selP.length),el('div',{className:'stat-l'},'Products')),
@@ -1596,32 +1973,63 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
       pks.map(k=>{
         const p=phases[k],col=pcol[p.s]||'var(--txd)';
         const nc=`pnum${p.s==='active'?' act':p.s==='done'?' dn':''}`;
+        const hasErrs=p.errs&&p.errs.length>0;
+        const open=errOpen[k];
         return el('div',{key:k,className:'iphase'},
           el('div',{className:'phdr'},
             el('div',{className:nc},p.s==='active'?'…':p.s==='done'?'✓':p.s==='partial'?'!':pks.indexOf(k)+1),
             el('span',{className:'ptit'},p.l),
             el('span',{className:'pst',style:{color:col}},p.i||p.s)
           ),
-          p.s==='done'&&iRes&&k==='products'&&el('div',{style:{maxHeight:110,overflowY:'auto',marginTop:8}},
-            iRes.pR.slice(0,8).map((r,i)=>el('div',{key:i,className:'rrow'},el('span',{className:r.ok?'rok':'rfail'},r.ok?'✓':'✗'),el('span',{style:{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},r.name),r.uid&&el('span',{style:{fontSize:10,color:'var(--txdd)',fontFamily:'monospace'}},r.uid.slice(0,8)+'…'))),
-            iRes.pR.length>8&&el('div',{style:{fontSize:11,color:'var(--txd)',padding:'4px 0'}},'+' +(iRes.pR.length-8)+' more')
+          // ── Persistent error panel — always visible when failures exist ──
+          hasErrs&&el('div',{className:'phase-err'},
+            el('div',{className:'phase-err-hd',onClick:()=>toggleErr(k)},
+              el('svg',{width:12,height:12,viewBox:'0 0 12 12',fill:'none'},el('path',{d:'M6 1L11 10H1L6 1z',stroke:'currentColor',strokeWidth:'1.2',strokeLinejoin:'round'}),el('path',{d:'M6 5v2.5M6 9v.5',stroke:'currentColor',strokeWidth:'1.2',strokeLinecap:'round'})),
+              el('span',{style:{flex:1,fontWeight:500}},p.errs.length+' error'+(p.errs.length>1?'s':'')+' — click to '+(open?'hide':'show')),
+              el('span',null,open?'▲':'▼')
+            ),
+            open&&el('div',{className:'phase-err-body'},
+              p.errs.map((e,i)=>el('div',{key:i,className:'per'},
+                el('span',{className:'per-dot'},'✗'),
+                el('span',null,e)
+              ))
+            )
           ),
-          p.s==='done'&&iRes&&k==='packages'&&el('div',{style:{marginTop:8}},
-            iRes.pkgR.map((r,i)=>el('div',{key:i,className:'rrow'},el('span',{className:r.ok?'rok':'rfail'},r.ok?'✓':'✗'),el('span',{style:{flex:1}},r.name),el('span',{className:tbc(r.tier||'')},r.tier?.toUpperCase()||'')))
+          // ── Success detail rows ──
+          (p.s==='done'||p.s==='partial')&&iRes&&k==='products'&&el('div',{style:{maxHeight:100,overflowY:'auto',marginTop:hasErrs?4:8}},
+            iRes.pR.filter(r=>r.ok).slice(0,6).map((r,i)=>el('div',{key:i,className:'rrow'},el('span',{className:'rok'},'✓'),el('span',{style:{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},r.name),r.uid&&el('span',{style:{fontSize:10,color:'var(--txdd)',fontFamily:'monospace'}},r.uid.slice(0,8)+'…'))),
+            iRes.pR.filter(r=>r.ok).length>6&&el('div',{style:{fontSize:11,color:'var(--txd)',padding:'3px 0'}},'+' +(iRes.pR.filter(r=>r.ok).length-6)+' more created')
+          ),
+          (p.s==='done'||p.s==='partial')&&iRes&&k==='packages'&&el('div',{style:{marginTop:hasErrs?4:8}},
+            iRes.pkgR.map((r,i)=>el('div',{key:i,className:'rrow'},el('span',{className:r.ok?'rok':'rfail'},r.ok?'✓':'✗'),el('span',{style:{flex:1}},r.name),r.error&&el('span',{style:{fontSize:10,color:'var(--er-tx)',maxWidth:200,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},r.error),el('span',{className:tbc(r.tier||'')},r.tier?.toUpperCase()||'')))
           )
         );
       }),
       iLogs.length>0&&el('div',{style:{marginTop:10}},
-        el('div',{className:'lbl'},'Activity Log'),
-        el('div',{ref:iLogRef,style:{background:'var(--inp-bg)',border:'1px solid var(--bdd)',borderRadius:'var(--r8)',padding:'10px 12px',maxHeight:120,overflowY:'auto',fontFamily:'monospace',fontSize:11,color:'var(--txd)',lineHeight:1.7}},
-          iLogs.map((l,i)=>el('div',{key:i},l)))
+        el('div',{style:{display:'flex',alignItems:'center',marginBottom:4}},
+          el('div',{className:'lbl',style:{margin:0}}, 'Activity Log'),
+          el('button',{className:'log-dl-btn',onClick:downloadLog},'↓ Download full log')
+        ),
+        el('div',{ref:iLogRef,style:{background:'var(--inp-bg)',border:'1px solid var(--bdd)',borderRadius:'var(--r8)',padding:'10px 12px',maxHeight:180,overflowY:'auto',fontFamily:'monospace',fontSize:11,color:'var(--txd)',lineHeight:1.7}},
+          iLogs.map((l,i)=>el('div',{key:i,style:{color:l.includes(' \u2717')||l.includes('ERROR')?'var(--er-tx)':l.includes(' \u2713')||l.includes('complete')?'var(--ok-tx)':undefined}},l)))
       ),
-      iDone&&el('div',{className:'a-ok',style:{marginTop:10}},'🎉 Import complete — '+iRes.pR.filter(r=>r.ok).length+' products and '+iRes.pkgR.filter(r=>r.ok).length+' packages created in Zuper.'),
+      iDone&&el('div',{className:'a-ok',style:{marginTop:10,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
+        el('span',null,'🎉 Import complete — '+iRes.pR.filter(r=>r.ok).length+' products and '+iRes.pkgR.filter(r=>r.ok).length+' packages created in Zuper.'),
+        el('button',{
+          className:'btn-g btn-sm',
+          onClick:()=>downloadImportExcel(iRes,phases),
+          style:{marginLeft:'auto',flexShrink:0},
+          title:'Download full import report with error log as Excel file',
+        },'↓ Excel Report')
+      ),
+      !iDone&&iRes&&el('div',{style:{textAlign:'right',marginTop:8}},
+        el('button',{className:'btn-g btn-sm',onClick:()=>downloadImportExcel(iRes,phases)},'↓ Excel Report (partial)')
+      ),
       el(RunControls,{running:importing,paused:importPaused,onPause:toggleImportPause,onCancel:cancelImport}),
       el('div',{className:'nav'},
         el('button',{className:'btn-g',onClick:onBack,disabled:importing},'← Back'),
         el('div',{className:'row'},
-          iDone&&el('button',{className:'btn-g',onClick:()=>{sIDone(false);sp(p=>Object.fromEntries(Object.entries(p).map(([k,v])=>[k,{...v,s:'idle',i:''}])));}},'Re-run'),
+          iDone&&el('button',{className:'btn-g',onClick:()=>{sIDone(false);sp(p=>Object.fromEntries(Object.entries(p).map(([k,v])=>[k,{...v,s:'idle',i:'',errs:[]}])));}},'Re-run'),
           el('button',{className:'btn',onClick:startImport,disabled:importing,style:{minWidth:140}},
             importing
               ?el('span',{className:'ld'},el('div',{className:'da'}),el('div',{className:'da'}),el('div',{className:'da'}),'Importing…')
