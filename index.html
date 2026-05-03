@@ -699,48 +699,200 @@ function apiErr(j){
   if(typeof j==='string')return j.slice(0,120);
   return j.message||j.error||(Array.isArray(j.errors)?j.errors[0]:'')||JSON.stringify(j).slice(0,120);
 }
-function mkProd(p,cu){
-  // Only include fields with real values — empty strings cause Zuper validation errors
+
+/* ─────────────────────────────────────────────────────────────────────────
+   PRODUCT CLASSIFIER — determines if a product should be PARTS, SERVICE, or BUNDLE
+   Source: Zuper CPQ spec + roofing industry heuristics from master sheets
+   ───────────────────────────────────────────────────────────────────────── */
+const PARTS_ONLY_RE = /nail|screw|fastener|plate|staple|cap nail|ring shank|bolt|anchor|clip|bracket|hanger|washer|rivet|ferrule|grommet|sleeve|tip|applicator|mixer|gun|hose|brush|roller|paddle|bucket|can|tube|bag|box|pail|kit|tool|cleaner|solvent|primer spray/i;
+const SERVICE_ONLY_RE = /inspection|consultation|assessment|survey|^labor|delivery fee|freight|shipping|disposal|dumpster|permit|warranty|project management|setup|mobilization/i;
+const BUNDLE_PUSH_RE = /shingle|membrane|underlayment|insulation|ridge|vent|flashing|ice.*water|starter|hip.*ridge|valley.*metal|drip.*edge|soffit|fascia|deck.*armor|felt|siding|panel|board|coating|adhesive|cement|foam.*adhesive|coping|drain|scupper|skylight/i;
+
+function classifyProd(p){
+  const name = p.product_name || '';
+  const price = parseFloat(p.suggested_price) || 0;
+  // Hard overrides
+  if(SERVICE_ONLY_RE.test(name)) return 'SKIP';      // pure service — no material product
+  if(PARTS_ONLY_RE.test(name))   return 'PARTS';     // hardware/consumable — no labor bundle
+  // Bundle if meaningful price and looks like a real product category
+  if(price > 1 && BUNDLE_PUSH_RE.test(name)) return 'BUNDLE';
+  if(price > 1) return 'BUNDLE';                      // default: everything with price > $1 gets a labor sibling
+  if(price > 0) return 'PARTS';
+  return 'SKIP';
+}
+
+/* Build PARTS payload — for BUNDLE items, adds "- Material" suffix */
+function mkProd(p,cu,isBundle=false){
   const prodObj={
-    product_name:p.product_name,
-    product_id:`SRS-${p.product_id}`,
+    product_name: isBundle ? `${p.product_name} - Material` : p.product_name,
+    product_id:   isBundle ? `SRS-${p.product_id}-MAT` : `SRS-${p.product_id}`,
     is_available:true,
     price:parseFloat(p.suggested_price)||0,
-    min_quantity:0,
-    quantity:0,
-    product_type:'PARTS',
-    pricing_level:'ROLLUP',
-    track_quantity:false,
-    has_custom_tax:false,
-    meta_data:[],
-    is_billable:true,
-    consider_profitability:true,
-    is_commissionable:true,
+    min_quantity:0,quantity:0,
+    product_type:'PARTS',pricing_level:'ROLLUP',
+    track_quantity:false,has_custom_tax:false,meta_data:[],
+    is_billable:true,consider_profitability:true,is_commissionable:true,
     location_availability:[],
-    tax:{tax_exempt:false},
-    product_files:[],
+    tax:{tax_exempt:false},product_files:[],
     option:{customer_selection:false,option_label:'Option',option_values:[]},
   };
-  // Only add optional fields if they have real values
   if(cu)prodObj.product_category=cu;
   if(p.manufacturer_norm)prodObj.brand=p.manufacturer_norm;
   const uomVal=uom(p.product_uom);if(uomVal)prodObj.uom=uomVal;
   // ⚠ Never send product_image — SRS catalog URLs are rejected by Zuper as "Invalid Image / Attachment"
   return{product:prodObj,vendor:[]};
 }
+
+/* Build SERVICE payload for labor sibling — always $0, manually updated in Zuper later */
+function mkProdLabor(p,cu){
+  const prodObj={
+    product_name:`${p.product_name} - Labor`,
+    product_id:`SRS-${p.product_id}-LAB`,
+    is_available:true,
+    price:0,         // $0 — user will manually set labor rates in Zuper
+    min_quantity:0,quantity:0,
+    product_type:'SERVICE',pricing_level:'ROLLUP',
+    track_quantity:false,has_custom_tax:false,meta_data:[],
+    is_billable:true,consider_profitability:true,is_commissionable:true,
+    location_availability:[],
+    tax:{tax_exempt:false},product_files:[],
+    option:{customer_selection:false,option_label:'Option',option_values:[]},
+  };
+  if(cu)prodObj.product_category=cu;
+  if(p.manufacturer_norm)prodObj.brand=p.manufacturer_norm;
+  const uomVal=uom(p.product_uom);if(uomVal)prodObj.uom=uomVal;
+  return{product:prodObj,vendor:[]};
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   BUNDLE CREATION ENGINE
+   Runs AFTER material+labor products exist in Zuper.
+   Creates BUNDLE products linking Material UID + Labor UID.
+   Always: PARTS → SERVICE → BUNDLE. Never create bundle first.
+   ───────────────────────────────────────────────────────────────────────── */
+async function runBundleCreate({auth,selProds,um,ulm,signal,onPhase,onLog}){
+  const sig=signal||{cancel:false,pause:false};
+  const{key,url}=auth,log=m=>onLog&&onLog(m);
+  async function chk(){while(sig.pause&&!sig.cancel)await slp(200);if(sig.cancel)throw new Error('CANCELLED');}
+
+  onPhase('bundles','active');
+  // Only products where BOTH material AND labor UIDs exist
+  const candidates=selProds.filter(p=>{
+    if(classifyProd(p)!=='BUNDLE')return false;
+    const name=(p.product_name||'').toLowerCase();
+    if(/optional|addon|add-on/i.test(name))return false; // spec: skip optional/addon
+    return !!(um[p.product_id]&&ulm[p.product_id]);
+  });
+  log(`Bundle candidates: ${candidates.length} products with both Material + Labor UIDs`);
+
+  if(candidates.length===0){
+    onPhase('bundles','done',{success:0,failed:0,skipped:0});
+    return{bR:[]};
+  }
+
+  // Pre-check existing bundles to avoid duplicates
+  const existBundleByExtId={};
+  try{
+    let pg=1;
+    while(true){
+      await chk();
+      const r=await zf(`${url}product?count=100&page=${pg}`,{headers:zh(key)});
+      const items=r.j?.data||[];
+      items.forEach(p=>{if(p.product_id&&p.product_uid)existBundleByExtId[p.product_id]=p.product_uid;});
+      if(items.length<100)break;pg++;
+    }
+    log(`Existing products checked for bundle dedup`);
+  }catch(e){if(e.message==='CANCELLED')throw e;log('Could not pre-check bundles: '+e.message);}
+
+  const bR=[];let bs=0,bf=0,bReused=0;
+  const bErrLog=[];
+
+  for(const p of candidates){
+    await chk();
+    const extId=`SRS-${p.product_id}-BND`;
+    // Dedup check
+    if(existBundleByExtId[extId]){
+      bR.push({name:p.product_name,uid:existBundleByExtId[extId],ok:true,reused:true});
+      bReused++;log(`↺ Reused bundle: ${p.product_name}`);
+      continue;
+    }
+    const matPrice=Math.round((parseFloat(p.suggested_price)||0)*100)/100;
+    const payload={product:{
+      product_name:p.product_name,
+      product_id:extId,
+      is_available:true,
+      price:matPrice,    // bundle price = material price (labor is $0 for now)
+      min_quantity:0,quantity:0,
+      product_type:'BUNDLE',pricing_level:'ROLLUP',
+      track_quantity:false,has_custom_tax:false,meta_data:[],
+      is_billable:true,consider_profitability:true,is_commissionable:true,
+      location_availability:[],
+      tax:{tax_exempt:false},product_files:[],
+      option:{customer_selection:false,option_label:'Option',option_values:[]},
+      associated_products:[
+        {product_uid:um[p.product_id],  quantity:1,price:matPrice,purchase_price:0,preferred_product:false},
+        {product_uid:ulm[p.product_id], quantity:1,price:0,        purchase_price:0,preferred_product:false},
+      ],
+    },vendor:[]};
+    if(p.manufacturer_norm)payload.product.brand=p.manufacturer_norm;
+    const uomVal=uom(p.product_uom);if(uomVal)payload.product.uom=uomVal;
+    try{
+      const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(payload)});
+      const uid=r.j?.data?.product_uid;
+      if(uid){bs++;bR.push({name:p.product_name,uid,ok:true});log(`✓ Bundle: ${p.product_name} — ${uid.slice(0,8)}...`);}
+      else{bf++;const err=apiErr(r.j);bR.push({name:p.product_name,uid:null,ok:false,error:err});if(bErrLog.length<20)bErrLog.push(`${p.product_name}: ${err}`);log(`✗ ${p.product_name}: ${err}`);}
+    }catch(e){
+      if(e.message==='CANCELLED')throw e;
+      bf++;bR.push({name:p.product_name,uid:null,ok:false,error:e.message});
+      if(bErrLog.length<20)bErrLog.push(`${p.product_name}: ${e.message}`);
+    }
+    await slp(BDLY);
+  }
+
+  log(`Bundles: ${bs} created, ${bReused} reused, ${bf} failed`);
+  onPhase('bundles',bf===0?'done':'partial',{success:bs,reused:bReused,failed:bf,errors:bErrLog.slice(0,20)});
+  return{bR};
+}
+
+/* Bracket-matching CEIL stripper — handles nested parens like CEIL((a*(1+b))/100) */
+function stripCeil(expr){
+  let s=expr,changed=true;
+  while(changed){
+    changed=false;
+    const up=s.toUpperCase();
+    let idx=up.indexOf('CEIL(');
+    while(idx!==-1){
+      const start=idx+4; // position of opening '('
+      let depth=0,end=-1;
+      for(let i=start;i<s.length;i++){
+        if(s[i]==='(')depth++;
+        else if(s[i]===')'){depth--;if(depth===0){end=i;break;}}
+      }
+      if(end!==-1){
+        const inner=s.slice(start+1,end); // content between CEIL's parens
+        s=s.slice(0,idx)+'('+inner+')'+s.slice(end+1);
+        changed=true;break; // restart scan from scratch
+      }
+      idx=up.indexOf('CEIL(',idx+1);
+    }
+  }
+  // Collapse redundant double parens: ((x)) → (x)
+  let prev='';
+  while(prev!==s){prev=s;s=s.replace(/\(\(([^()]+)\)\)/g,'($1)');}
+  return s;
+}
+
 function mkFormula(li,toks){
   if(li.formula_type==='direct_input'||!li.formula_expr)return null;
 
   // ── Priority 1: hardcoded industry-standard formula ──────────────────────
-  // These are proven across 40+ accounts. No CEIL, no token-name mismatch.
   const hf=findHardcodedFormula(li.display_name);
   if(hf){
     const result=buildHardcodedFormula(hf,toks,li.display_name);
     if(result)return result;
-    // Token not found in this account → fall through to DB formula
   }
 
-  // ── Priority 2: DB formula_expr with token substitution + CEIL strip ─────
+  // ── Priority 2: DB formula_expr — substitute tokens, then strip CEIL ─────
   const sorted=[...toks].sort((a,b)=>b.name.length-a.name.length);
   let mapped=li.formula_expr;
   const em=[];let c=1;
@@ -752,11 +904,8 @@ function mkFormula(li,toks){
     c++;
   }
   if(!em.length)return null;
-  // Strip CEIL() — Zuper formula engine rejects it; NEXT_WHOLE_NUMBER achieves same effect
-  let expr=mapped.replace(/\s+/g,'');
-  let prev='';
-  while(prev!==expr){prev=expr;expr=expr.replace(/CEIL\(([^()]+)\)/gi,'($1)');}
-  while(/\(\([^()]+\)\)/.test(expr))expr=expr.replace(/\(\(([^()]+)\)\)/g,'($1)');
+  // Use bracket-matching stripper — handles any nesting depth
+  const expr=stripCeil(mapped.replace(/\s+/g,''));
   const ck=li.display_name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').substring(0,50)+'_cpq';
   return{formula:{formula_name:`${li.display_name} (CPQ)`,formula_key:ck,formula_category:'AREA_MEASUREMENT',formula_description:li.display_name,formula:{expression:expr,expression_map:em,rounding_mechanism:'NEXT_WHOLE_NUMBER'}}};
 }
@@ -774,9 +923,18 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
   log(`${toks.length} tokens · category UID: ${cu||'none (no category set)'}`);
   onPhase('tokens','done',{count:toks.length});
 
-  // ── Phase 2: Products ─────────────────────────────────────────────────────
+  // ── Phase 2: Material Products (PARTS) ───────────────────────────────────
   await chk();
-  onPhase('products','active');log(`Creating ${selProds.length} products...`);
+  onPhase('products','active');
+  // Classify all products upfront
+  const prodClassMap={};
+  selProds.forEach(p=>{prodClassMap[p.product_id]=classifyProd(p);});
+  const bundleCandidates=selProds.filter(p=>prodClassMap[p.product_id]==='BUNDLE');
+  const partsOnly=selProds.filter(p=>prodClassMap[p.product_id]==='PARTS');
+  const skipItems=selProds.filter(p=>prodClassMap[p.product_id]==='SKIP');
+  log(`Classified: ${bundleCandidates.length} BUNDLE · ${partsOnly.length} PARTS-only · ${skipItems.length} SKIP`);
+  log(`Creating ${bundleCandidates.length+partsOnly.length} material products...`);
+
   const pR=[],um={};let ps=0,pf=0;
   const prodErrLog=[];
 
@@ -793,7 +951,9 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
     if(Object.keys(existProdByExtId).length)log(`Found ${Object.keys(existProdByExtId).length} existing products — will reuse`);
   }catch(e){if(e.message==='CANCELLED')throw e;log('Could not pre-check products: '+e.message);}
 
-  const pls=selProds.map(p=>mkProd(p,cu));
+  // Build payloads — BUNDLE items get "- Material" suffix + -MAT product_id
+  const allMatProds=[...bundleCandidates,...partsOnly];
+  const pls=allMatProds.map(p=>mkProd(p,cu,prodClassMap[p.product_id]==='BUNDLE'));
 
   for(const[ci,chunk]of cks(pls,BULK).entries()){
     await chk();
@@ -807,7 +967,7 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
     }
     // Record reused products
     reuseIdxs.forEach(i=>{
-      const p=selProds[si+i],uid=existProdByExtId[chunk[i].product.product_id];
+      const p=allMatProds[si+i],uid=existProdByExtId[chunk[i].product.product_id];
       um[p.product_id]=uid;ps++;
       pR.push({name:p.product_name,uid,ok:true,reused:true});
     });
@@ -821,7 +981,7 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
       const r=await zf(`${url}products/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({products:newChunk})});
       if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){
         for(let i=0;i<newIdxs.length;i++){
-          const p=selProds[si+newIdxs[i]];
+          const p=allMatProds[si+newIdxs[i]];
           const uid=r.j.data[i]?.product_uid;
           if(uid){um[p.product_id]=uid;ps++;}
           else{pf++;if(prodErrLog.length<20)prodErrLog.push(`${p.product_name}: ${apiErr(r.j.data[i])||'no UID'}`);}
@@ -831,14 +991,14 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
       }else if(!r.ok){
         if(prodErrLog.length<3)prodErrLog.push(`Bulk HTTP ${r.status}: ${apiErr(r.j)}`);
       }
-    }catch(e){if(e.message==='CANCELLED')throw e;prodErrLog.push('Bulk exc: '+e.message);}
+    }catch(e){if(e.message==='CANCELLED')throw e;log('\u26a0 Bulk unavailable ('+e.message.slice(0,40)+') — using individual creates');}
 
     // FIXED fallback — windowed from 0, no double-execution
     if(!bulkOk){
       for(let w=0;w<newIdxs.length;w+=FALLBACK_CONC){
         await Promise.all(newIdxs.slice(w,w+FALLBACK_CONC).map(async(ci2)=>{
           if(sig.cancel)return;
-          const p=selProds[si+ci2];
+          const p=allMatProds[si+ci2];
           try{
             const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(chunk[ci2])});
             const uid=r.j?.data?.product_uid;
@@ -855,11 +1015,140 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
     }
     await slp(BDLY);
   }
-  log(`Products: ${ps} created/reused, ${pf} failed`);
-  if(pf>0){log(`--- Product errors (${Math.min(prodErrLog.length,10)} shown):`);prodErrLog.slice(0,10).forEach(e=>log('  \u2717 '+e));}
+  log(`Material Products: ${ps} created/reused, ${pf} failed`);
+  if(pf>0){log(`--- Material product errors (${Math.min(prodErrLog.length,10)} shown):`);prodErrLog.slice(0,10).forEach(e=>log('  \u2717 '+e));}
   onPhase('products',pf===0?'done':'partial',{success:ps,failed:pf,errors:prodErrLog.slice(0,20)});
 
-  // ── Phase 3: Formulas ─────────────────────────────────────────────────────
+  // ── Phase 2b: Labor Products (SERVICE, $0) ────────────────────────────────
+  await chk();
+  onPhase('labor','active');
+  const ulm={};
+  const lR=[];let ls=0,lf=0,lReused=0;
+  const laborErrLog=[];
+  const laborPayloads=bundleCandidates.map(p=>mkProdLabor(p,cu));
+  log(`Creating ${laborPayloads.length} labor products (SERVICE, $0)...`);
+
+  for(const[ci,chunk]of cks(laborPayloads,BULK).entries()){
+    await chk();
+    const si=ci*BULK;
+    const newIdxsL=[],reuseIdxsL=[];
+    for(let i=0;i<chunk.length;i++){
+      if(existProdByExtId[chunk[i].product.product_id])reuseIdxsL.push(i);
+      else newIdxsL.push(i);
+    }
+    reuseIdxsL.forEach(i=>{
+      const p=bundleCandidates[si+i],uid=existProdByExtId[chunk[i].product.product_id];
+      ulm[p.product_id]=uid;ls++;lReused++;
+      lR.push({name:`${p.product_name} - Labor`,uid,ok:true,reused:true});
+    });
+    if(newIdxsL.length===0){await slp(BDLY);continue;}
+    const newChunkL=newIdxsL.map(i=>chunk[i]);
+    let bulkOkL=false;
+    try{
+      const r=await zf(`${url}products/bulk`,{method:'POST',headers:zh(key),body:JSON.stringify({products:newChunkL})});
+      if(r.ok&&Array.isArray(r.j?.data)&&r.j.data.length){
+        for(let i=0;i<newIdxsL.length;i++){
+          const p=bundleCandidates[si+newIdxsL[i]];
+          const uid=r.j.data[i]?.product_uid;
+          if(uid){ulm[p.product_id]=uid;ls++;}
+          else{lf++;if(laborErrLog.length<10)laborErrLog.push(`${p.product_name} - Labor: ${apiErr(r.j.data[i])||'no UID'}`);}
+          lR.push({name:`${p.product_name} - Labor`,uid:uid||null,ok:!!uid});
+        }
+        bulkOkL=true;
+      }else if(!r.ok){if(laborErrLog.length<3)laborErrLog.push(`Bulk HTTP ${r.status}: ${apiErr(r.j)}`);}
+    }catch(e){if(e.message==='CANCELLED')throw e;log('\u26a0 Labor bulk unavailable — using individual creates');}
+    if(!bulkOkL){
+      for(let w=0;w<newIdxsL.length;w+=FALLBACK_CONC){
+        await Promise.all(newIdxsL.slice(w,w+FALLBACK_CONC).map(async(ci2)=>{
+          if(sig.cancel)return;
+          const p=bundleCandidates[si+ci2];
+          try{
+            const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(chunk[ci2])});
+            const uid=r.j?.data?.product_uid;
+            if(uid){ulm[p.product_id]=uid;ls++;}
+            else{lf++;if(laborErrLog.length<10)laborErrLog.push(`${p.product_name} - Labor: ${apiErr(r.j)}`);}
+            lR.push({name:`${p.product_name} - Labor`,uid:uid||null,ok:!!uid});
+          }catch(e){
+            if(e.message==='CANCELLED')throw e;
+            lf++;lR.push({name:`${p.product_name} - Labor`,uid:null,ok:false});
+            if(laborErrLog.length<10)laborErrLog.push(`${p.product_name} - Labor: ${e.message}`);
+          }
+        }));
+      }
+    }
+    await slp(BDLY);
+  }
+  log(`Labor Products: ${ls} created/reused (${lReused} reused), ${lf} failed`);
+  if(lf>0){laborErrLog.slice(0,5).forEach(e=>log('  \u2717 '+e));}
+  onPhase('labor',lf===0?'done':'partial',{success:ls,reused:lReused,failed:lf,errors:laborErrLog.slice(0,20)});
+
+  // ── Phase 3: Bundles (BUNDLE = Material + Labor) — must run BEFORE packages ──
+  await chk();
+  onPhase('bundles','active');
+  const bR=[],ubm={};  // ubm: bundle UID map — product_id → bundle product UID
+  let bs=0,bf=0,bReused=0;
+  const bErrLog=[];
+
+  // Dedup: re-use existProdByExtId already loaded in Phase 2
+  const bundleCreates=bundleCandidates.filter(p=>um[p.product_id]&&ulm[p.product_id]&&
+    !/optional|addon|add-on/i.test(p.product_name||''));
+  log(`Bundles: ${bundleCreates.length} candidates (need both Material + Labor UIDs)`);
+
+  for(const p of bundleCreates){
+    await chk();
+    const extId=`SRS-${p.product_id}-BND`;
+    if(existProdByExtId[extId]){
+      ubm[p.product_id]=existProdByExtId[extId];bReused++;
+      bR.push({name:p.product_name,uid:existProdByExtId[extId],ok:true,reused:true});
+      log(`\u21ba Reused bundle: ${p.product_name}`);
+      continue;
+    }
+    const matPrice=Math.round((parseFloat(p.suggested_price)||0)*100)/100;
+    const payload={product:{
+      product_name:p.product_name,
+      product_id:extId,
+      is_available:true,
+      price:matPrice,
+      min_quantity:0,quantity:0,
+      product_type:'BUNDLE',pricing_level:'ROLLUP',
+      track_quantity:false,has_custom_tax:false,meta_data:[],
+      is_billable:true,consider_profitability:true,is_commissionable:true,
+      location_availability:[],
+      tax:{tax_exempt:false},product_files:[],
+      option:{customer_selection:false,option_label:'Option',option_values:[]},
+      associated_products:[
+        {product_uid:um[p.product_id], quantity:1,price:matPrice,purchase_price:0,preferred_product:false},
+        {product_uid:ulm[p.product_id],quantity:1,price:0,        purchase_price:0,preferred_product:false},
+      ],
+    },vendor:[]};
+    if(p.manufacturer_norm)payload.product.brand=p.manufacturer_norm;
+    const uomVal=uom(p.product_uom);if(uomVal)payload.product.uom=uomVal;
+    // ⚠ product_category is MANDATORY for BUNDLE — always include it.
+    // If ensureProdCat returned null, create "CPQ Imports" category right now.
+    if(!cu){
+      try{
+        const catR=await zf(`${url}products/category`,{method:'POST',headers:zh(key),body:JSON.stringify({product_category:{category_name:'CPQ Imports',business_unit:[]}})});
+        const newCu=catR.j?.data?.product_category_uid;
+        if(newCu){cu=newCu;log(`Created "CPQ Imports" category → ${newCu.slice(0,8)}...`);}
+      }catch(e){if(e.message==='CANCELLED')throw e;}
+    }
+    if(cu)payload.product.product_category=cu;
+    try{
+      const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(payload)});
+      const uid=r.j?.data?.product_uid;
+      if(uid){ubm[p.product_id]=uid;bs++;bR.push({name:p.product_name,uid,ok:true});log(`\u2713 Bundle: ${p.product_name} — ${uid.slice(0,8)}...`);}
+      else{bf++;const err=apiErr(r.j);bR.push({name:p.product_name,uid:null,ok:false,error:err});if(bErrLog.length<20)bErrLog.push(`${p.product_name}: ${err}`);log(`\u2717 ${p.product_name}: ${err}`);}
+    }catch(e){
+      if(e.message==='CANCELLED')throw e;
+      bf++;bR.push({name:p.product_name,uid:null,ok:false,error:e.message});
+      if(bErrLog.length<20)bErrLog.push(`${p.product_name}: ${e.message}`);
+    }
+    await slp(BDLY);
+  }
+  log(`Bundles: ${bs} created, ${bReused} reused, ${bf} failed`);
+  onPhase('bundles',bf===0?'done':'partial',{success:bs,reused:bReused,failed:bf,errors:bErrLog.slice(0,20)});
+
+  // ── Phase 4: Formulas ─────────────────────────────────────────────────────
   await chk();
   onPhase('formulas','active');
   const fR=[],fu={};let fs=0,fReused=0,fsk=0,ff=0;
@@ -904,8 +1193,8 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
           fR.push({name:li.display_name,uid:uid||null,ok:!!uid});
         }
         ok=true;
-      }else if(!r.ok){if(fErrLog.length<3)fErrLog.push(`Bulk HTTP ${r.status}: ${apiErr(r.j)}`);}
-    }catch(e){if(e.message==='CANCELLED')throw e;fErrLog.push('Bulk: '+e.message);}
+      }else if(!r.ok){log('\u26a0 Formula bulk returned '+r.status+' — using individual creates');}
+    }catch(e){if(e.message==='CANCELLED')throw e;log('\u26a0 Formula bulk unavailable — using individual creates');}
     if(!ok){
       for(let w=0;w<chunk.length;w+=FALLBACK_CONC){
         await Promise.all(chunk.slice(w,w+FALLBACK_CONC).map(async({li,fp})=>{
@@ -926,43 +1215,43 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
   if(ff>0){log('--- Formula errors:');fErrLog.slice(0,8).forEach(e=>log('  \u2717 '+e));}
   onPhase('formulas','done',{success:fs,reused:fReused,skipped:fsk,failed:ff,errors:fErrLog.slice(0,20)});
 
-  // ── Phase 4: Packages ─────────────────────────────────────────────────────
+  // ── Phase 5: Packages — bundle UIDs used where available ─────────────────
   await chk();
   onPhase('packages','active');
   const pkgR=[];
   const availUids=Object.keys(um).length;
-  log(`Building packages — ${availUids} product UIDs available`);
+  log(`Building packages — ${Object.keys(ubm).length} bundles, ${availUids} material products`);
 
   const pkgDefs=['good','better','best'].map(tk=>{
     const tp=tiers[tk]||[],un=tiers.untiered||[];
     const all=tk==='best'?[...tp,...un]:tp;
-    // Include ALL products that were successfully imported (have a UID),
-    // not just ones with formulas. Products without formula get price=$0 so
-    // the package structure is complete — user sets quantity manually in Zuper.
-    let matched=all.filter(p=>um[p.product_id]);
-    if(matched.length===0&&availUids>0){
-      const allImp=selProds.filter(p=>um[p.product_id]);
+    let matched=all.filter(p=>ubm[p.product_id]||um[p.product_id]);
+    if(matched.length===0){
+      const allImp=selProds.filter(p=>ubm[p.product_id]||um[p.product_id]);
       const take=tk==='good'?Math.ceil(allImp.length*0.4):tk==='better'?Math.ceil(allImp.length*0.7):allImp.length;
       matched=allImp.slice(0,take);
     }
     const line_items=matched.map(p=>{
+      const isBundled=!!ubm[p.product_id];
+      const prodUid=isBundled?ubm[p.product_id]:um[p.product_id];
       const hasFormula=!!(mappings[p.product_id]&&fu[mappings[p.product_id]]);
-      // Use actual price only when a formula is linked — otherwise $0 (manual qty in Zuper)
       const unitPrice=hasFormula?(parseFloat(p.suggested_price)||0):0;
-      return{
-        line_item_type:'ITEM',product_uid:um[p.product_id],
-        product_id:`SRS-${p.product_id}`,product_type:'PARTS',
+      const li={
+        line_item_type:'ITEM',
+        product_uid:prodUid,
+        product_id:isBundled?`SRS-${p.product_id}-BND`:`SRS-${p.product_id}`,
+        product_type:isBundled?'BUNDLE':'PARTS',
         name:p.product_name,description:'',uom:uom(p.product_uom),
         quantity:hasFormula?1:0,
         unit_price:unitPrice,purchase_price:0,
-        discount:0,discount_type:'FIXED',serial_nos:[],
-        total:unitPrice,
+        discount:0,discount_type:'FIXED',serial_nos:[],total:unitPrice,
         section_type:'EXPANDED',show_section_total:false,show_child_prices:true,
         brand:p.manufacturer_norm||'',specification:'',image:'',
         location_uid:'',location_name:'',
         tax:{tax_exempt:false},is_billable:true,associated_products:[],
-        ...(hasFormula?{formula:fu[mappings[p.product_id]]}:{})
       };
+      if(hasFormula)li.formula=fu[mappings[p.product_id]];
+      return li;
     });
     return{package_name:`${TM[tk].label} - ${TM[tk].sub}`,line_items,tier:tk};
   });
@@ -974,7 +1263,8 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
       pkgR.push({name:package_name,uid:null,ok:false,tier,error:'No products with UIDs'});
       continue;
     }
-    log(`Creating "${package_name}" with ${line_items.length} line items...`);
+    const bundledCount=line_items.filter(li=>li.product_type==='BUNDLE').length;
+    log(`Creating "${package_name}" — ${line_items.length} items (${bundledCount} bundles, ${line_items.length-bundledCount} parts)...`);
     try{
       const r=await zf(`${url}invoice_estimate/package`,{
         method:'POST',headers:zh(key),
@@ -993,7 +1283,7 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
   const ps2=pkgR.filter(r=>r.ok).length,pf2=pkgR.filter(r=>!r.ok).length;
   log(`Packages: ${ps2} created, ${pf2} failed`);
   onPhase('packages',pf2===0?'done':'partial',{success:ps2,failed:pf2});
-  return{pR,fR,pkgR};
+  return{pR,lR,bR,fR,pkgR,um,ulm,ubm,bundleCandidates,prodClassMap};
 }
 
 /* ── Deletion engine — fetches UIDs from Zuper then deletes one-by-one with pause/cancel ── */
@@ -1084,6 +1374,14 @@ function downloadImportExcel(iRes,phases){
   // Colour failed rows red (xlsx-style)
   XLSX.utils.book_append_sheet(wb,wsProds,'Products');
 
+  // ── Sheet 1b: Labor Products ───────────────────────────────────────────────
+  const laborRows=(iRes?.lR||[]).map(r=>({'Labor Product':r.name||'','Status':r.reused?'REUSED':r.ok?'CREATED':'FAILED','Zuper UID':r.uid||'','Error / Notes':(!r.ok&&!r.reused)?r.error||'See Error Summary':''}));
+  if(laborRows.length){
+    const wsLabor=XLSX.utils.json_to_sheet(laborRows);
+    wsLabor['!cols']=[{wch:45},{wch:10},{wch:38},{wch:80}];
+    XLSX.utils.book_append_sheet(wb,wsLabor,'Labor Products');
+  }
+
   // ── Sheet 2: Formulas ──────────────────────────────────────────────────
   const formulaRows=(iRes?.fR||[]).map(r=>({
     'Formula Name':r.name||'',
@@ -1135,6 +1433,14 @@ function downloadImportExcel(iRes,phases){
   const wsErrs=XLSX.utils.json_to_sheet(errRows);
   wsErrs['!cols']=[{wch:12},{wch:45},{wch:100}];
   XLSX.utils.book_append_sheet(wb,wsErrs,'Error Summary');
+
+  // ── Sheet 5: Bundles (if present) ─────────────────────────────────────────
+  if((iRes.bR||[]).length){
+    const bndRows=(iRes.bR||[]).map(r=>({'Bundle Name':r.name||'','Status':r.reused?'REUSED':r.ok?'CREATED':'FAILED','Zuper UID':r.uid||'','Error / Notes':r.error||''}));
+    const wsBnds=XLSX.utils.json_to_sheet(bndRows);
+    wsBnds['!cols']=[{wch:45},{wch:10},{wch:38},{wch:80}];
+    XLSX.utils.book_append_sheet(wb,wsBnds,'Bundles');
+  }
 
   const fname='zuper_import_'+new Date().toISOString().slice(0,19).replace(/[T:]/g,'-')+'.xlsx';
   XLSX.writeFile(wb,fname);
@@ -1814,10 +2120,20 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
   const[importing,sImporting]=useState(false);
   const[importPaused,sImportPaused]=useState(false);
   const importSig=useRef({cancel:false,pause:false});
-  const[phases,sp]=useState({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:''},products:{s:'idle',l:'Create Products (Bulk)',i:''},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:''},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:''}});
+  const[phases,sp]=useState({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:'',errs:[]},products:{s:'idle',l:'Create Material Products (PARTS)',i:'',errs:[]},labor:{s:'idle',l:'Create Labor Products (SERVICE, $0)',i:'',errs:[]},bundles:{s:'idle',l:'Create Bundle Products (BUNDLE)',i:'',errs:[]},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:'',errs:[]},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:'',errs:[]}});
   const[iLogs,sILogs]=useState([]);
   const[iRes,sIRes]=useState(null);
   const[iDone,sIDone]=useState(false);
+  const[iUlm,sIUlm]=useState({});           // labor UID map from import result
+  const[iBundleCands,sIBundleCands]=useState([]); // bundle-classified products
+  // Bundle creation state
+  const[bundleRunning,sBundleRunning]=useState(false);
+  const[bundlePaused,sBundlePaused]=useState(false);
+  const[bundlePhase,sBundlePhase]=useState({s:'idle',i:'',errs:[]});
+  const[bundleRes,sBundleRes]=useState(null);
+  const[bundleLogs,sBundleLogs]=useState([]);
+  const bundleSig=useRef({cancel:false,pause:false});
+  const bundleLogRef=useRef(null);
   const iLogRef=useRef(null);
   const selP=useMemo(()=>allProds.filter(p=>selIds.includes(p.product_id)),[allProds,selIds]);
   const addILog=m=>sILogs(p=>[...p,'['+new Date().toLocaleTimeString()+'] '+m]);
@@ -1834,10 +2150,53 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
     importSig.current.pause=false;
     sImportPaused(false);
   };
+  // ── Bundle creation handlers ───────────────────────────────────────────────
+  const toggleBundlePause=()=>{
+    const next=!bundleSig.current.pause;
+    bundleSig.current.pause=next;sBundlePaused(next);
+  };
+  const cancelBundle=()=>{
+    if(!window.confirm('Cancel bundle creation?'))return;
+    bundleSig.current.cancel=true;bundleSig.current.pause=false;sBundlePaused(false);
+  };
+  const startBundles=async()=>{
+    if(!iRes||!iRes.ulm)return;
+    bundleSig.current={cancel:false,pause:false};
+    sBundleRunning(true);sBundleLogs([]);sBundleRes(null);
+    sBundlePhase({s:'active',i:'',errs:[]});
+    const addBLog=m=>sBundleLogs(p=>[...p,'['+new Date().toLocaleTimeString()+'] '+m]);
+    try{
+      const r=await runBundleCreate({
+        auth,
+        selProds:iBundleCands.length?iBundleCands:selP.filter(p=>classifyProd(p)==='BUNDLE'),
+        um:iRes.um||Object.fromEntries((iRes.pR||[]).filter(r=>r.uid&&r.ok).map(r=>{
+          // rebuild um from pR — find matching selP product
+          const prod=selP.find(p=>p.product_name===r.name||(r.name===p.product_name+' - Material'));
+          return prod?[prod.product_id,r.uid]:[];
+        }).filter(e=>e.length)),
+        ulm:iUlm,
+        signal:bundleSig.current,
+        onPhase:(k,s,x={})=>{
+          const parts=[];
+          if(x.success!=null)parts.push(`${x.success} created`);
+          if(x.reused)parts.push(`${x.reused} reused`);
+          if(x.failed)parts.push(`${x.failed} failed`);
+          sBundlePhase({s,i:parts.join(', ')||s,errs:x.errors||[]});
+        },
+        onLog:addBLog,
+      });
+      sBundleRes(r);
+    }catch(e){
+      if(e.message==='CANCELLED')addBLog('⚠ Bundle creation cancelled.');
+      else addBLog('ERROR: '+e.message);
+    }
+    sBundleRunning(false);sBundlePaused(false);
+  };
+
   const startImport=async()=>{
     importSig.current={cancel:false,pause:false};
     sImporting(true);sILogs([]);sIRes(null);sIDone(false);
-    sp({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:'',errs:[]},products:{s:'idle',l:'Create Products (Bulk)',i:'',errs:[]},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:'',errs:[]},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:'',errs:[]}});
+    sp({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:'',errs:[]},products:{s:'idle',l:'Create Material Products (PARTS)',i:'',errs:[]},labor:{s:'idle',l:'Create Labor Products (SERVICE, $0)',i:'',errs:[]},bundles:{s:'idle',l:'Create Bundle Products (BUNDLE)',i:'',errs:[]},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:'',errs:[]},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:'',errs:[]}});
     try{
       const r=await runImport({auth,selProds:selP,lineItems,mappings,tiers,signal:importSig.current,
         onPhase:(k,s,x={})=>{
@@ -1850,11 +2209,11 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
             if(x.skipped)parts.push(`${x.skipped} skipped`);
             i=parts.join(', ');
           }else i=s;
-          // Store errors in phase state so they show permanently in the UI
           setPS(k,s,{i,errs:x.errors||[]});
         },
         onLog:addILog});
-      sIRes(r);sIDone(true);
+      sIRes(r);sIDone(true);sIUlm(r.ulm||{});sIBundleCands(r.bundleCandidates||[]);
+      // bR now in iRes.bR — bundles already created inline
     }catch(e){
       if(e.message==='CANCELLED')addILog('⚠ Import cancelled by user.');
       else addILog('ERROR: '+e.message);
@@ -1863,7 +2222,8 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
   };
 
   useEffect(()=>{if(iLogRef.current)iLogRef.current.scrollTop=iLogRef.current.scrollHeight;},[iLogs]);
-  const pks=['tokens','products','formulas','packages'];
+  useEffect(()=>{if(bundleLogRef.current)bundleLogRef.current.scrollTop=bundleLogRef.current.scrollHeight;},[bundleLogs]);
+  const pks=['tokens','products','labor','bundles','formulas','packages'];
   const pcol={idle:'var(--txd)',active:'var(--or)',done:'var(--gr)',partial:'var(--am)',fail:'var(--re)'};
   const tot=iRes?(iRes.pR.filter(r=>r.ok).length+iRes.pkgR.filter(r=>r.ok).length):0;
 
@@ -2014,22 +2374,20 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
           iLogs.map((l,i)=>el('div',{key:i,style:{color:l.includes(' \u2717')||l.includes('ERROR')?'var(--er-tx)':l.includes(' \u2713')||l.includes('complete')?'var(--ok-tx)':undefined}},l)))
       ),
       iDone&&el('div',{className:'a-ok',style:{marginTop:10,display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}},
-        el('span',null,'🎉 Import complete — '+iRes.pR.filter(r=>r.ok).length+' products and '+iRes.pkgR.filter(r=>r.ok).length+' packages created in Zuper.'),
+        el('span',null,'🎉 Import complete — '+iRes.pR.filter(r=>r.ok).length+' material, '+(iRes.lR||[]).filter(r=>r.ok).length+' labor, '+(iRes.bR||[]).filter(r=>r.ok).length+' bundles, '+iRes.pkgR.filter(r=>r.ok).length+' packages created in Zuper.'),
         el('button',{
           className:'btn-g btn-sm',
           onClick:()=>downloadImportExcel(iRes,phases),
           style:{marginLeft:'auto',flexShrink:0},
-          title:'Download full import report with error log as Excel file',
         },'↓ Excel Report')
       ),
-      !iDone&&iRes&&el('div',{style:{textAlign:'right',marginTop:8}},
-        el('button',{className:'btn-g btn-sm',onClick:()=>downloadImportExcel(iRes,phases)},'↓ Excel Report (partial)')
-      ),
-      el(RunControls,{running:importing,paused:importPaused,onPause:toggleImportPause,onCancel:cancelImport}),
+
+
+            el(RunControls,{running:importing,paused:importPaused,onPause:toggleImportPause,onCancel:cancelImport}),
       el('div',{className:'nav'},
         el('button',{className:'btn-g',onClick:onBack,disabled:importing},'← Back'),
         el('div',{className:'row'},
-          iDone&&el('button',{className:'btn-g',onClick:()=>{sIDone(false);sp(p=>Object.fromEntries(Object.entries(p).map(([k,v])=>[k,{...v,s:'idle',i:'',errs:[]}])));}},'Re-run'),
+          iDone&&el('button',{className:'btn-g',onClick:()=>{sIDone(false);sIUlm({});sIBundleCands([]);sp({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:'',errs:[]},products:{s:'idle',l:'Create Material Products (PARTS)',i:'',errs:[]},labor:{s:'idle',l:'Create Labor Products (SERVICE, $0)',i:'',errs:[]},bundles:{s:'idle',l:'Create Bundle Products (BUNDLE)',i:'',errs:[]},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:'',errs:[]},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:'',errs:[]}});}},'Re-run'),
           el('button',{className:'btn',onClick:startImport,disabled:importing,style:{minWidth:140}},
             importing
               ?el('span',{className:'ld'},el('div',{className:'da'}),el('div',{className:'da'}),el('div',{className:'da'}),'Importing…')
