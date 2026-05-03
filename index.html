@@ -266,6 +266,45 @@ html,body{min-height:100%;background:var(--bg-page);font-family:-apple-system,Bl
 .formula-chip-item{font-size:10px;background:var(--or3);border:1px solid rgba(232,98,42,.22);color:var(--or);border-radius:4px;padding:2px 8px;font-family:monospace;display:flex;align-items:center;gap:5px}
 .fci-count{background:rgba(232,98,42,.2);border-radius:3px;padding:0 4px;font-size:9px;font-weight:700}
 
+/* ── Info Modal ── */
+.info-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow-y:auto;backdrop-filter:blur(2px)}
+.info-modal{background:var(--bg);border:1px solid var(--bdd);border-radius:var(--r12);width:100%;max-width:860px;box-shadow:0 24px 64px rgba(0,0,0,.28);position:relative}
+.info-modal-hd{display:flex;align-items:center;gap:10px;padding:18px 22px;border-bottom:1px solid var(--bdd);position:sticky;top:0;background:var(--bg);z-index:1;border-radius:var(--r12) var(--r12) 0 0}
+.info-modal-hd h2{margin:0;font-size:16px;font-weight:700;color:var(--tx);flex:1}
+.info-close{background:var(--bg3);border:1px solid var(--bdd);border-radius:50%;width:28px;height:28px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:14px;color:var(--txd);flex-shrink:0;line-height:1}
+.info-close:hover{background:var(--bg4);color:var(--tx)}
+.info-body{padding:22px;overflow-y:auto;max-height:calc(90vh - 80px)}
+.info-section{margin-bottom:28px}
+.info-section:last-child{margin-bottom:0}
+.info-section-hd{display:flex;align-items:center;gap:8px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid var(--or)}
+.info-section-hd .icon{font-size:16px;flex-shrink:0}
+.info-section-hd h3{margin:0;font-size:13px;font-weight:700;color:var(--tx);text-transform:uppercase;letter-spacing:.05em}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.info-grid-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+@media(max-width:600px){.info-grid,.info-grid-3{grid-template-columns:1fr}}
+.info-card{background:var(--bg2);border:1px solid var(--bdd);border-radius:var(--r8);padding:10px 12px}
+.info-card-title{font-size:11px;font-weight:700;color:var(--tx);margin-bottom:4px;display:flex;align-items:center;gap:5px}
+.info-card-body{font-size:11px;color:var(--txd);line-height:1.6}
+.info-pill{display:inline-block;font-size:9px;font-weight:600;padding:1px 6px;border-radius:3px;vertical-align:middle;margin-left:4px}
+.info-pill-green{background:rgba(16,185,129,.12);color:var(--gr);border:1px solid rgba(16,185,129,.25)}
+.info-pill-blue{background:rgba(59,130,246,.1);color:var(--bl);border:1px solid rgba(59,130,246,.25)}
+.info-pill-amber{background:rgba(245,158,11,.1);color:var(--am);border:1px solid rgba(245,158,11,.25)}
+.info-pill-red{background:rgba(248,113,113,.1);color:var(--er-tx);border:1px solid rgba(248,113,113,.25)}
+.info-formula-row{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--bdd2);font-size:11px;align-items:flex-start}
+.info-formula-row:last-child{border-bottom:none}
+.info-formula-name{flex:0 0 175px;font-weight:600;color:var(--tx)}
+.info-formula-expr{font-family:monospace;font-size:10px;color:var(--bl);background:var(--bg3);padding:2px 6px;border-radius:3px;flex:1;word-break:break-all}
+.info-formula-note{flex:0 0 200px;color:var(--txd);font-size:10px}
+.info-kv{display:flex;gap:6px;padding:4px 0;border-bottom:1px solid var(--bdd2);font-size:11px}
+.info-kv:last-child{border-bottom:none}
+.info-kv-k{color:var(--txd);flex:0 0 160px}
+.info-kv-v{color:var(--tx);font-weight:500}
+.info-phase-row{display:flex;gap:10px;align-items:flex-start;padding:6px 0;border-bottom:1px solid var(--bdd2);font-size:11px}
+.info-phase-row:last-child{border-bottom:none}
+.info-phase-num{flex-shrink:0;width:22px;height:22px;border-radius:50%;background:var(--or);color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700}
+.info-phase-content{flex:1}
+.info-phase-title{font-weight:700;color:var(--tx);margin-bottom:2px}
+.info-phase-desc{color:var(--txd);line-height:1.5}
 /* ── Per-phase error panel ── */
 .phase-err{background:rgba(248,113,113,.05);border:1px solid rgba(248,113,113,.2);border-radius:var(--r6);margin-top:8px;overflow:hidden}
 .phase-err-hd{display:flex;align-items:center;gap:7px;padding:7px 10px;cursor:pointer;user-select:none;font-size:11px;color:var(--er-tx)}
@@ -542,12 +581,55 @@ function findHardcodedFormula(displayName){
   return HARDCODED_FORMULAS.find(hf=>hf.match(displayName))||null;
 }
 
-/* Build expression_map for a hardcoded formula given the account's resolved tokens */
-function buildHardcodedFormula(hf, toks, displayName){
+/* Build expression_map for a hardcoded formula given the account's resolved tokens.
+   wasteOverride: {shingles, underlayment, starter, other} from user input in Step 3 */
+function buildHardcodedFormula(hf, toks, displayName, wasteOverride){
   const em=[];
-  for(let i=0;i<hf.tokens.length;i++){
-    const tok=toks.find(t=>t.name===hf.tokens[i]);
-    if(!tok)return null; // token not in this account
+  const tokensNeeded=[...hf.tokens];
+  // If formula needs waste % AND user has set an override, inline it as a constant
+  // instead of referencing the measurement token — more predictable results
+  const wasteTokenIdx=tokensNeeded.indexOf('Suggested Waste Percentage %');
+  let exprOverride=hf.expr;
+  if(wasteTokenIdx!==-1&&wasteOverride){
+    // Determine which category this product belongs to
+    const dn=(displayName||'').toLowerCase();
+    const wasteVal=
+      /shingle|shingles/i.test(dn)?wasteOverride.shingles:
+      /underlayment|underlay/i.test(dn)?wasteOverride.underlayment:
+      /starter/i.test(dn)?wasteOverride.starter:
+      wasteOverride.other;
+    if(wasteVal!=null){
+      // Replace the waste token placeholder ($N where N = wasteTokenIdx+1) with the literal value
+      // We need to build em without the waste entry and adjust expression
+      const wastePlaceholder=`$${wasteTokenIdx+1}`;
+      // Replace e.g. (1+$2/100) with the literal value: (1+0.12)
+      exprOverride=exprOverride.replace(
+        new RegExp(`\\(1\\+\\${wastePlaceholder}\\/100\\)`,'g'),
+        `(1+${(wasteVal/100).toFixed(4)})`
+      ).replace(
+        new RegExp(`\\(1\\-\\${wastePlaceholder}\\/100\\)`,'g'),
+        `(1-${(wasteVal/100).toFixed(4)})`
+      ).replace(new RegExp('\\'+wastePlaceholder,'g'),String(wasteVal));
+      // Remove the waste token from the list — it's now inlined
+      tokensNeeded.splice(wasteTokenIdx,1);
+    }
+  }
+  // Renumber remaining token placeholders
+  let finalExpr=exprOverride;
+  const remapping={};
+  let newIdx=1;
+  for(let i=1;i<=hf.tokens.length;i++){
+    const ph=`$${i}`;
+    if(finalExpr.includes(ph))remapping[i]=newIdx++;
+  }
+  for(const[old,nw]of Object.entries(remapping)){
+    finalExpr=finalExpr.split(`$${old}`).join(`__${nw}__`);
+  }
+  finalExpr=finalExpr.replace(/__(\d+)__/g,'$$$1');
+
+  for(let i=0;i<tokensNeeded.length;i++){
+    const tok=toks.find(t=>t.name===tokensNeeded[i]);
+    if(!tok)return null;
     em.push({key:`$${i+1}`,type:'MEASUREMENT',measurement_token_uid:tok.uid,measurement_category_uid:tok.catUid});
   }
   if(!em.length)return null;
@@ -556,8 +638,8 @@ function buildHardcodedFormula(hf, toks, displayName){
     formula_name:`${displayName} (CPQ)`,
     formula_key:ck,
     formula_category:'AREA_MEASUREMENT',
-    formula_description:`${displayName} — ${hf.note}`,
-    formula:{expression:hf.expr,expression_map:em,rounding_mechanism:'NEXT_WHOLE_NUMBER'},
+    formula_description:`${displayName} — ${hf.note}${wasteOverride?` · waste ${wasteOverride.shingles||wasteOverride.other}%`:''}`,
+    formula:{expression:finalExpr,expression_map:em,rounding_mechanism:'NEXT_WHOLE_NUMBER'},
   }};
 }
 
@@ -703,22 +785,34 @@ function apiErr(j){
 /* ─────────────────────────────────────────────────────────────────────────
    PRODUCT CLASSIFIER — determines if a product should be PARTS, SERVICE, or BUNDLE
    Source: Zuper CPQ spec + roofing industry heuristics from master sheets
+
+   RULES (in priority order):
+   1. SERVICE_ONLY  → SKIP entirely (delivery fees, inspections — not a physical product)
+   2. PARTS_ONLY    → PARTS (hardware/consumables that never need a labor sibling)
+   3. price > $1 + roofing keyword → BUNDLE
+   4. price > $1 (any product with real price) → BUNDLE
+   5. price = $0 or null → PARTS  ← CRITICAL: user selected it, always import it
+      (DO NOT SKIP zero-price products — many catalog items have no price in SRS)
    ───────────────────────────────────────────────────────────────────────── */
-const PARTS_ONLY_RE = /nail|screw|fastener|plate|staple|cap nail|ring shank|bolt|anchor|clip|bracket|hanger|washer|rivet|ferrule|grommet|sleeve|tip|applicator|mixer|gun|hose|brush|roller|paddle|bucket|can|tube|bag|box|pail|kit|tool|cleaner|solvent|primer spray/i;
-const SERVICE_ONLY_RE = /inspection|consultation|assessment|survey|^labor|delivery fee|freight|shipping|disposal|dumpster|permit|warranty|project management|setup|mobilization/i;
+// Word boundaries (\b) prevent "nail" matching "NailBase", "can" matching "scan", etc.
+const PARTS_ONLY_RE = /\b(nail|screw|fastener|staple|cap nail|ring shank|bolt|washer|rivet|ferrule|grommet|sleeve|applicator|mixer|gun|hose|brush|roller|paddle|bucket|pail|cleaner|solvent|primer spray)\b/i;
+const SERVICE_ONLY_RE = /inspection|consultation|assessment|survey|^labor|delivery fee|freight|shipping|disposal|dumpster|permit|warranty|project management|setup fee|mobilization/i;
 const BUNDLE_PUSH_RE = /shingle|membrane|underlayment|insulation|ridge|vent|flashing|ice.*water|starter|hip.*ridge|valley.*metal|drip.*edge|soffit|fascia|deck.*armor|felt|siding|panel|board|coating|adhesive|cement|foam.*adhesive|coping|drain|scupper|skylight/i;
 
 function classifyProd(p){
   const name = p.product_name || '';
   const price = parseFloat(p.suggested_price) || 0;
-  // Hard overrides
-  if(SERVICE_ONLY_RE.test(name)) return 'SKIP';      // pure service — no material product
-  if(PARTS_ONLY_RE.test(name))   return 'PARTS';     // hardware/consumable — no labor bundle
-  // Bundle if meaningful price and looks like a real product category
+  // 1. Genuine service-type items — skip entirely (not a physical product)
+  if(SERVICE_ONLY_RE.test(name)) return 'SKIP';
+  // 2. Hardware/consumables — PARTS only (no labor sibling)
+  if(PARTS_ONLY_RE.test(name)) return 'PARTS';
+  // 3 & 4. Roofing products with real price → BUNDLE
   if(price > 1 && BUNDLE_PUSH_RE.test(name)) return 'BUNDLE';
-  if(price > 1) return 'BUNDLE';                      // default: everything with price > $1 gets a labor sibling
-  if(price > 0) return 'PARTS';
-  return 'SKIP';
+  if(price > 1) return 'BUNDLE';
+  // 5. Zero-price OR unknown price — still import as PARTS
+  // NEVER skip user-selected products just because price is $0 in the SRS catalog
+  // Many trim, commercial, siding products have no pricing data in SRS
+  return 'PARTS';
 }
 
 /* Build PARTS payload — for BUNDLE items, adds "- Material" suffix */
@@ -882,13 +976,13 @@ function stripCeil(expr){
   return s;
 }
 
-function mkFormula(li,toks){
+function mkFormula(li,toks,wasteOverride){
   if(li.formula_type==='direct_input'||!li.formula_expr)return null;
 
   // ── Priority 1: hardcoded industry-standard formula ──────────────────────
   const hf=findHardcodedFormula(li.display_name);
   if(hf){
-    const result=buildHardcodedFormula(hf,toks,li.display_name);
+    const result=buildHardcodedFormula(hf,toks,li.display_name,wasteOverride);
     if(result)return result;
   }
 
@@ -910,7 +1004,7 @@ function mkFormula(li,toks){
   return{formula:{formula_name:`${li.display_name} (CPQ)`,formula_key:ck,formula_category:'AREA_MEASUREMENT',formula_description:li.display_name,formula:{expression:expr,expression_map:em,rounding_mechanism:'NEXT_WHOLE_NUMBER'}}};
 }
 
-async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,onLog}){
+async function runImport({auth,selProds,lineItems,mappings,tiers,waste,accSet,pkgNames,regionMult,signal,onPhase,onLog}){
   const sig=signal||{cancel:false,pause:false};
   const{key,url}=auth,log=m=>onLog&&onLog(m);
   async function chk(){while(sig.pause&&!sig.cancel)await slp(200);if(sig.cancel)throw new Error('CANCELLED');}
@@ -932,8 +1026,9 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
   const bundleCandidates=selProds.filter(p=>prodClassMap[p.product_id]==='BUNDLE');
   const partsOnly=selProds.filter(p=>prodClassMap[p.product_id]==='PARTS');
   const skipItems=selProds.filter(p=>prodClassMap[p.product_id]==='SKIP');
-  log(`Classified: ${bundleCandidates.length} BUNDLE · ${partsOnly.length} PARTS-only · ${skipItems.length} SKIP`);
-  log(`Creating ${bundleCandidates.length+partsOnly.length} material products...`);
+  log(`Classified: ${bundleCandidates.length} BUNDLE · ${partsOnly.length} PARTS-only · ${skipItems.length} SKIP (service/delivery items)`);
+  if(skipItems.length>0) log(`\u26a0 ${skipItems.length} products SKIPPED (matched service keywords — inspection, delivery, permit etc.)`);
+  log(`Creating ${bundleCandidates.length+partsOnly.length} material products (${bundleCandidates.length} with labor sibling, ${partsOnly.length} parts-only)...`);
 
   const pR=[],um={};let ps=0,pf=0;
   const prodErrLog=[];
@@ -1085,64 +1180,72 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
   // ── Phase 3: Bundles (BUNDLE = Material + Labor) — must run BEFORE packages ──
   await chk();
   onPhase('bundles','active');
-  const bR=[],ubm={};  // ubm: bundle UID map — product_id → bundle product UID
+  const bR=[],ubm={};
   let bs=0,bf=0,bReused=0;
   const bErrLog=[];
 
-  // Dedup: re-use existProdByExtId already loaded in Phase 2
   const bundleCreates=bundleCandidates.filter(p=>um[p.product_id]&&ulm[p.product_id]&&
     !/optional|addon|add-on/i.test(p.product_name||''));
-  log(`Bundles: ${bundleCreates.length} candidates (need both Material + Labor UIDs)`);
+  log(`Bundles: ${bundleCreates.length} candidates — creating with ${FALLBACK_CONC} concurrent workers`);
 
-  for(const p of bundleCreates){
-    await chk();
+  // Ensure category exists before spawning workers (category creation must be serial)
+  if(!cu&&bundleCreates.length>0){
+    try{
+      const catR=await zf(`${url}products/category`,{method:'POST',headers:zh(key),body:JSON.stringify({product_category:{category_name:'CPQ Imports',business_unit:[]}})});
+      const newCu=catR.j?.data?.product_category_uid;
+      if(newCu){cu=newCu;log(`Created "CPQ Imports" category → ${newCu.slice(0,8)}...`);}
+    }catch(e){if(e.message==='CANCELLED')throw e;log('Could not create bundle category: '+e.message);}
+  }
+
+  // Separate reused from new upfront — reused need no API call
+  const toCreate=[];
+  bundleCreates.forEach(p=>{
     const extId=`SRS-${p.product_id}-BND`;
     if(existProdByExtId[extId]){
       ubm[p.product_id]=existProdByExtId[extId];bReused++;
       bR.push({name:p.product_name,uid:existProdByExtId[extId],ok:true,reused:true});
-      log(`\u21ba Reused bundle: ${p.product_name}`);
-      continue;
-    }
-    const matPrice=Math.round((parseFloat(p.suggested_price)||0)*100)/100;
-    const payload={product:{
-      product_name:p.product_name,
-      product_id:extId,
-      is_available:true,
-      price:matPrice,
-      min_quantity:0,quantity:0,
-      product_type:'BUNDLE',pricing_level:'ROLLUP',
-      track_quantity:false,has_custom_tax:false,meta_data:[],
-      is_billable:true,consider_profitability:true,is_commissionable:true,
-      location_availability:[],
-      tax:{tax_exempt:false},product_files:[],
-      option:{customer_selection:false,option_label:'Option',option_values:[]},
-      associated_products:[
-        {product_uid:um[p.product_id], quantity:1,price:matPrice,purchase_price:0,preferred_product:false},
-        {product_uid:ulm[p.product_id],quantity:1,price:0,        purchase_price:0,preferred_product:false},
-      ],
-    },vendor:[]};
-    if(p.manufacturer_norm)payload.product.brand=p.manufacturer_norm;
-    const uomVal=uom(p.product_uom);if(uomVal)payload.product.uom=uomVal;
-    // ⚠ product_category is MANDATORY for BUNDLE — always include it.
-    // If ensureProdCat returned null, create "CPQ Imports" category right now.
-    if(!cu){
+    }else{toCreate.push(p);}
+  });
+  if(bReused)log(`↺ ${bReused} bundles reused from previous run`);
+
+  // Windowed concurrent creation — same FALLBACK_CONC=8 pattern as products
+  for(let w=0;w<toCreate.length;w+=FALLBACK_CONC){
+    await chk();
+    await Promise.all(toCreate.slice(w,w+FALLBACK_CONC).map(async p=>{
+      if(sig.cancel)return;
+      const extId=`SRS-${p.product_id}-BND`;
+      const matPrice=Math.round((parseFloat(p.suggested_price)||0)*100)/100;
+      const payload={product:{
+        product_name:p.product_name,
+        product_id:extId,
+        is_available:true,
+        price:matPrice,
+        min_quantity:0,quantity:0,
+        product_type:'BUNDLE',pricing_level:'ROLLUP',
+        track_quantity:false,has_custom_tax:false,meta_data:[],
+        is_billable:true,consider_profitability:true,is_commissionable:true,
+        location_availability:[],
+        tax:{tax_exempt:false},product_files:[],
+        option:{customer_selection:false,option_label:'Option',option_values:[]},
+        associated_products:[
+          {product_uid:um[p.product_id], quantity:1,price:matPrice,purchase_price:0,preferred_product:false},
+          {product_uid:ulm[p.product_id],quantity:1,price:0,        purchase_price:0,preferred_product:false},
+        ],
+      },vendor:[]};
+      if(p.manufacturer_norm)payload.product.brand=p.manufacturer_norm;
+      const uomVal=uom(p.product_uom);if(uomVal)payload.product.uom=uomVal;
+      if(cu)payload.product.product_category=cu;
       try{
-        const catR=await zf(`${url}products/category`,{method:'POST',headers:zh(key),body:JSON.stringify({product_category:{category_name:'CPQ Imports',business_unit:[]}})});
-        const newCu=catR.j?.data?.product_category_uid;
-        if(newCu){cu=newCu;log(`Created "CPQ Imports" category → ${newCu.slice(0,8)}...`);}
-      }catch(e){if(e.message==='CANCELLED')throw e;}
-    }
-    if(cu)payload.product.product_category=cu;
-    try{
-      const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(payload)});
-      const uid=r.j?.data?.product_uid;
-      if(uid){ubm[p.product_id]=uid;bs++;bR.push({name:p.product_name,uid,ok:true});log(`\u2713 Bundle: ${p.product_name} — ${uid.slice(0,8)}...`);}
-      else{bf++;const err=apiErr(r.j);bR.push({name:p.product_name,uid:null,ok:false,error:err});if(bErrLog.length<20)bErrLog.push(`${p.product_name}: ${err}`);log(`\u2717 ${p.product_name}: ${err}`);}
-    }catch(e){
-      if(e.message==='CANCELLED')throw e;
-      bf++;bR.push({name:p.product_name,uid:null,ok:false,error:e.message});
-      if(bErrLog.length<20)bErrLog.push(`${p.product_name}: ${e.message}`);
-    }
+        const r=await zf(`${url}product`,{method:'POST',headers:zh(key),body:JSON.stringify(payload)});
+        const uid=r.j?.data?.product_uid;
+        if(uid){ubm[p.product_id]=uid;bs++;bR.push({name:p.product_name,uid,ok:true});log(`\u2713 Bundle: ${p.product_name} — ${uid.slice(0,8)}...`);}
+        else{bf++;const err=apiErr(r.j);bR.push({name:p.product_name,uid:null,ok:false,error:err});if(bErrLog.length<20)bErrLog.push(`${p.product_name}: ${err}`);log(`\u2717 ${p.product_name}: ${err}`);}
+      }catch(e){
+        if(e.message==='CANCELLED')throw e;
+        bf++;bR.push({name:p.product_name,uid:null,ok:false,error:e.message});
+        if(bErrLog.length<20)bErrLog.push(`${p.product_name}: ${e.message}`);
+      }
+    }));
     await slp(BDLY);
   }
   log(`Bundles: ${bs} created, ${bReused} reused, ${bf} failed`);
@@ -1173,7 +1276,7 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
   const fps=[];
   for(const liId of[...new Set(Object.values(mappings).filter(Boolean))]){
     const li=lineItems.find(l=>l.id===liId);if(!li)continue;
-    const fp=mkFormula(li,toks);
+    const fp=mkFormula(li,toks,waste);
     if(!fp){fsk++;continue;}
     const existUid=existingByKey[fp.formula.formula_key]||existingByName[fp.formula.formula_name];
     if(existUid){fu[li.id]=existUid;fReused++;fR.push({name:li.display_name,uid:existUid,ok:true,reused:true});}
@@ -1253,7 +1356,7 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,signal,onPhase,
       if(hasFormula)li.formula=fu[mappings[p.product_id]];
       return li;
     });
-    return{package_name:`${TM[tk].label} - ${TM[tk].sub}`,line_items,tier:tk};
+    const tmpl=(pkgNames&&pkgNames[tk])||`${TM[tk].label} - ${TM[tk].sub}`;const package_name=tmpl.replace(/\{brand\}/gi,(selProds.find(p=>p.manufacturer_norm)?.manufacturer_norm||'')).replace(/\s{2,}/g,' ').trim()||tmpl;return{package_name,line_items,tier:tk};
   });
 
   for(const{package_name,line_items,tier}of pkgDefs){
@@ -1523,7 +1626,7 @@ function Step1({onSuccess}){
  * 5. Debounce: 250 ms on the text field — prevents re-filtering 19k rows on
  *    every keystroke.
  */
-function Step2({onNext,selIds,setSelIds,allProds,fmap,prodsLoaded,loadProgress}){
+function Step2({onNext,selIds,setSelIds,allProds,fmap,prodsLoaded,loadProgress,accIds,setAccIds}){
   const[rawQ,setRawQ]=useState('');
   const[brand,setBrand]=useState('');   // canonical manufacturer_norm from DB
   const[catF,setCatF]=useState('');
@@ -1670,8 +1773,9 @@ function Step2({onNext,selIds,setSelIds,allProds,fmap,prodsLoaded,loadProgress})
           )
         :vis.map(p=>{
             const isSel=selSet.has(p.product_id);
+            const isAcc=accIds&&accIds.has(p.product_id);
             const tier=normT(fmap[p.product_id]?.family_tier||p.family_tier);
-            return React.createElement('div',{key:p.product_id,className:`prow${isSel?' on':''}`,onClick:()=>toggle(p.product_id)},
+            return React.createElement('div',{key:p.product_id,className:`prow${isSel?' on':''}${isAcc?' acc-row':''}`,style:isAcc?{opacity:.75}:undefined,onClick:()=>toggle(p.product_id)},
               React.createElement('div',{className:'pck'},isSel?'✓':''),
               React.createElement('div',{style:{flex:1,minWidth:0}},
                 React.createElement('div',{className:'pn'},hlToks.length?React.createElement(Hl,{text:p.product_name,toks:hlToks}):p.product_name),
@@ -1680,10 +1784,25 @@ function Step2({onNext,selIds,setSelIds,allProds,fmap,prodsLoaded,loadProgress})
                   p.product_category&&React.createElement('span',{className:'kpill'},p.product_category),
                   p.product_line&&React.createElement('span',{className:'kpill',style:{maxWidth:110,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',display:'inline-block'}},p.product_line),
                   p.proposal_line_item&&React.createElement('span',{style:{fontSize:9,color:'var(--or)',background:'var(--or3)',border:'1px solid rgba(232,98,42,.2)',borderRadius:2,padding:'1px 5px',whiteSpace:'nowrap',overflow:'hidden',maxWidth:140,textOverflow:'ellipsis',display:'inline-block'}},p.proposal_line_item),
-                  tier&&React.createElement('span',{className:tbc(tier)},tier.toUpperCase())
+                  tier&&React.createElement('span',{className:tbc(tier)},tier.toUpperCase()),
+                  isAcc&&React.createElement('span',{className:'kpill',style:{background:'rgba(245,158,11,.12)',color:'var(--am)',border:'1px solid rgba(245,158,11,.3)',fontWeight:600}},'🔧 Accessory')
                 )
               ),
-              p.suggested_price!=null&&React.createElement('div',{className:'ppr'},'$'+parseFloat(p.suggested_price).toFixed(2))
+              p.suggested_price!=null&&React.createElement('div',{className:'ppr'},'$'+parseFloat(p.suggested_price).toFixed(2)),
+              // Accessory toggle — stops row click from propagating
+              isSel&&setAccIds&&React.createElement('button',{
+                className:'btn-ico btn-sm',
+                style:{fontSize:10,padding:'2px 6px',marginLeft:4,flexShrink:0,
+                  background:isAcc?'rgba(245,158,11,.15)':'transparent',
+                  color:isAcc?'var(--am)':'var(--txd)',
+                  border:`1px solid ${isAcc?'rgba(245,158,11,.4)':'var(--bdd)'}`,
+                  borderRadius:3,cursor:'pointer'},
+                onClick:e=>{
+                  e.stopPropagation();
+                  setAccIds(prev=>{const n=new Set(prev);n.has(p.product_id)?n.delete(p.product_id):n.add(p.product_id);return n;});
+                },
+                title:isAcc?'Mark as regular product (include in packages)':'Mark as Accessory (catalog only, excluded from packages)',
+              },isAcc?'🔧 Acc':'+ Acc')
             );
           })
     ),
@@ -1697,13 +1816,15 @@ function Step2({onNext,selIds,setSelIds,allProds,fmap,prodsLoaded,loadProgress})
       React.createElement('span',{style:{fontSize:11,color:'var(--txd)',marginLeft:8}},filtered.length.toLocaleString()+' total')
     ),
     React.createElement('div',{className:'nav'},
-      React.createElement('span',{className:'nav-i'},selIds.length?selIds.length.toLocaleString()+' product(s) selected':'Select at least 1 product'),
+      React.createElement('span',{className:'nav-i'},
+        selIds.length?selIds.length.toLocaleString()+' selected'+(accIds&&accIds.size?' · '+accIds.size+' accessories':''):'Select at least 1 product'
+      ),
       React.createElement('button',{className:'btn',disabled:!selIds.length,onClick:onNext},'Next: Map Line Items →')
     )
   );
 }
 
-function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings,onNext,onBack}){
+function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings,waste,setWaste,accIds,setAccIds,onNext,onBack}){
   const[ld,sld]=useState(!lineItems.length);const[err,se]=useState('');
   const[mapFilter,setMapFilter]=useState(null);
   const[validating,sValidating]=useState(false);
@@ -1994,6 +2115,49 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
           );
         })
     ),
+
+    // ── Waste Factor Overrides ─────────────────────────────────────────────
+    waste&&setWaste&&React.createElement('div',{style:{marginTop:14,padding:'12px 14px',background:'var(--bg2)',border:'1px solid var(--bdd)',borderRadius:'var(--r8)'}},
+      React.createElement('div',{style:{display:'flex',alignItems:'center',gap:8,marginBottom:10}},
+        React.createElement('div',{style:{fontSize:11,fontWeight:600,color:'var(--tx)'}},
+          '📐 Waste Factor Overrides'
+        ),
+        React.createElement('div',{style:{fontSize:10,color:'var(--txd)',flex:1}},
+          'Applies to formula calculations — overrides account default waste % token'
+        )
+      ),
+      React.createElement('div',{style:{display:'flex',gap:10,flexWrap:'wrap'}},
+        [
+          {k:'shingles',   label:'Shingles',      hint:'Standard: 10–15% · Hip/valley: 20%+'},
+          {k:'underlayment',label:'Underlayment', hint:'Standard: 10%'},
+          {k:'starter',   label:'Starter',        hint:'Standard: 5%'},
+          {k:'other',     label:'Other',          hint:'All other formula products'},
+        ].map(({k,label,hint})=>React.createElement('div',{key:k,style:{display:'flex',flexDirection:'column',gap:3,minWidth:130}},
+          React.createElement('label',{style:{fontSize:10,color:'var(--txd)'}},label+' waste %'),
+          React.createElement('div',{style:{display:'flex',alignItems:'center',gap:4}},
+            React.createElement('input',{
+              type:'number',min:0,max:50,step:1,
+              className:'inp',style:{width:70,textAlign:'right'},
+              value:waste[k],
+              onChange:e=>setWaste(w=>({...w,[k]:Math.max(0,Math.min(50,parseInt(e.target.value)||0))}))
+            }),
+            React.createElement('span',{style:{fontSize:10,color:'var(--txd)'}},hint)
+          )
+        ))
+      )
+    ),
+
+    // ── Accessories summary ────────────────────────────────────────────────
+    accIds&&accIds.size>0&&React.createElement('div',{style:{marginTop:8,padding:'8px 12px',background:'rgba(245,158,11,.06)',border:'1px solid rgba(245,158,11,.2)',borderRadius:'var(--r6)',display:'flex',alignItems:'center',gap:8}},
+      React.createElement('span',{style:{fontSize:11,color:'var(--am)'}},
+        '🔧 '+accIds.size+' accessory product'+(accIds.size>1?'s':'')+' — these will be imported to catalog but excluded from Good/Better/Best packages'
+      ),
+      React.createElement('button',{
+        className:'btn-ico btn-sm',style:{marginLeft:'auto'},
+        onClick:()=>setAccIds(new Set()),
+      },'Clear all')
+    ),
+
     React.createElement('div',{className:'nav'},
       React.createElement('button',{className:'btn-g',onClick:onBack},'← Back'),
       React.createElement('button',{className:'btn',onClick:onNext},'Build Packages →')
@@ -2001,12 +2165,38 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
   );
 }
 
-function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,onNext,onBack}){
+function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,accIds,pkgNames,setPkgNames,regionMult,setRegionMult,onNext,onBack}){
   const[sqft,setSqft]=useState(2200);const[pitch,setPitch]=useState('standard');const[story,setStory]=useState('1');
-  const selP=useMemo(()=>allProds.filter(p=>selIds.includes(p.product_id)),[allProds,selIds]);
-  useEffect(()=>{const t={good:[],better:[],best:[],untiered:[]};selP.forEach(p=>{const tk=normT(fmap[p.product_id]?.family_tier||p.family_tier);if(tk)t[tk].push(p);else t.untiered.push(p);});setTiers(t);},[selP,fmap]);
+  // #2 — Package name templates: {brand} and {tier} tokens supported
+  const[namesOpen,setNamesOpen]=useState(false);
+  const[regionOpen,setRegionOpen]=useState(false);
+  const REGIONS_PRESET=[
+    {label:'National avg (1.00×)',v:1.00},
+    {label:'Northeast / NYC (1.18×)',v:1.18},
+    {label:'West Coast / LA (1.15×)',v:1.15},
+    {label:'Southeast (0.93×)',v:0.93},
+    {label:'Midwest (0.95×)',v:0.95},
+    {label:'Texas (0.97×)',v:0.97},
+    {label:'Custom',v:'custom'},
+  ];
 
-  // Roof calculations
+  const selP=useMemo(()=>allProds.filter(p=>selIds.includes(p.product_id)),[allProds,selIds]);
+  const accSet=useMemo(()=>new Set(accIds||[]),[accIds]);
+  const pkgProds=useMemo(()=>selP.filter(p=>!accSet.has(p.product_id)),[selP,accSet]);
+  useEffect(()=>{const t={good:[],better:[],best:[],untiered:[]};pkgProds.forEach(p=>{const tk=normT(fmap[p.product_id]?.family_tier||p.family_tier);if(tk)t[tk].push(p);else t.untiered.push(p);});setTiers(t);},[pkgProds,fmap]);
+
+  // Derive dominant brand from selected products for the {brand} token
+  const dominantBrand=useMemo(()=>{
+    const counts={};
+    pkgProds.forEach(p=>{if(p.manufacturer_norm){counts[p.manufacturer_norm]=(counts[p.manufacturer_norm]||0)+1;}});
+    if(!Object.keys(counts).length)return '';
+    return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0][0];
+  },[pkgProds]);
+
+  // Resolve {brand} token in name templates
+  const resolveName=(tmpl)=>tmpl.replace(/\{brand\}/gi,dominantBrand||'').replace(/\s{2,}/g,' ').trim();
+
+  // Roof calculations (with regional multiplier applied to price)
   const squares=Math.round((sqft/100)*10)/10;
   const pitchMult=PITCH[pitch]||1;
   const storyMult=STORY[story]||1;
@@ -2024,14 +2214,11 @@ function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,onNext,on
       const materialCost=allForPrice.reduce((s,p)=>s+estProdCost(p,sqft,pitchMult,storyMult),0);
       
       if(materialCost>0){
-        // Add labor estimate (35-45% of total job is labor; material is ~55-65%)
-        // Total ≈ material / 0.60
         const laborFactor=tk==='good'?0.60:tk==='better'?0.58:0.55;
-        const totalEst=materialCost/laborFactor;
+        const totalEst=(materialCost/laborFactor)*regionMult;
         result[tk]=Math.round(totalEst/100)*100;
       }else{
-        // Fallback to rate card
-        result[tk]=Math.round(RATE_CARDS[tk].rate*squares*pitchMult*storyMult/100)*100;
+        result[tk]=Math.round(RATE_CARDS[tk].rate*squares*pitchMult*storyMult*regionMult/100)*100;
       }
     });
     return result;
@@ -2040,7 +2227,7 @@ function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,onNext,on
   const formulaCount=Object.keys(mappings).filter(k=>mappings[k]).length;
 
   return React.createElement('div',null,
-    // Controls bar
+    // ── Controls bar ──────────────────────────────────────────────────────
     React.createElement('div',{className:'sqbar'},
       React.createElement('label',null,'Roof size (sqft)'),
       React.createElement('input',{className:'inp',type:'number',value:sqft,min:100,max:50000,onChange:e=>setSqft(parseInt(e.target.value)||2200)}),
@@ -2052,17 +2239,106 @@ function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,onNext,on
         React.createElement('b',{style:{color:'var(--tx)'}},squares.toFixed(1)),' sq · ',selIds.length,' products · ',formulaCount,' formulas'
       )
     ),
-    // Tier cards
+
+    // ── Feature #5: Regional Price Adjustment ─────────────────────────────
+    React.createElement('div',{style:{marginBottom:8,background:'var(--bg2)',border:'1px solid var(--bdd)',borderRadius:'var(--r8)',overflow:'hidden'}},
+      React.createElement('div',{
+        style:{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',userSelect:'none'},
+        onClick:()=>setRegionOpen(o=>!o),
+      },
+        React.createElement('span',{style:{fontSize:11,fontWeight:600,color:'var(--tx)'}},
+          '📍 Regional Price Adjustment'
+        ),
+        regionMult!==1.0&&React.createElement('span',{className:'fbadge fbadge-hc'},regionMult.toFixed(2)+'×'),
+        regionMult===1.0&&React.createElement('span',{style:{fontSize:10,color:'var(--txd)'}},'National avg'),
+        React.createElement('span',{style:{marginLeft:'auto',fontSize:11,color:'var(--txd)'}},regionOpen?'▲':'▼')
+      ),
+      regionOpen&&React.createElement('div',{style:{padding:'0 14px 12px',borderTop:'1px solid var(--bdd)'}},
+        React.createElement('div',{style:{fontSize:10,color:'var(--txd)',marginBottom:8,marginTop:8}},
+          'Adjusts all package price estimates. Material prices in the SRS catalog are national averages — apply a regional multiplier to reflect local market rates.'
+        ),
+        React.createElement('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
+          REGIONS_PRESET.filter(r=>r.v!=='custom').map(r=>
+            React.createElement('button',{
+              key:r.v,
+              className:'btn-ico btn-sm',
+              style:{background:regionMult===r.v?'var(--or3)':undefined,color:regionMult===r.v?'var(--or)':undefined,borderColor:regionMult===r.v?'var(--or)':undefined},
+              onClick:()=>setRegionMult(r.v),
+            },r.label)
+          )
+        ),
+        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:8}},
+          React.createElement('label',{style:{fontSize:11,color:'var(--txd)',whiteSpace:'nowrap'}},'Custom multiplier:'),
+          React.createElement('input',{
+            className:'inp',type:'number',min:0.5,max:2.0,step:0.01,
+            style:{width:80,textAlign:'center'},
+            value:regionMult.toFixed(2),
+            onChange:e=>setRegionMult(Math.max(0.5,Math.min(2.0,parseFloat(e.target.value)||1))),
+          }),
+          React.createElement('span',{style:{fontSize:11,color:'var(--txd)'}},
+            regionMult===1.0?'No adjustment':`${regionMult>1?'+':''}${((regionMult-1)*100).toFixed(0)}% vs national avg`
+          )
+        )
+      )
+    ),
+
+    // ── Feature #2: Package Name Templates ────────────────────────────────
+    React.createElement('div',{style:{marginBottom:10,background:'var(--bg2)',border:'1px solid var(--bdd)',borderRadius:'var(--r8)',overflow:'hidden'}},
+      React.createElement('div',{
+        style:{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',userSelect:'none'},
+        onClick:()=>setNamesOpen(o=>!o),
+      },
+        React.createElement('span',{style:{fontSize:11,fontWeight:600,color:'var(--tx)'}},'🏷️ Package Names'),
+        dominantBrand&&React.createElement('span',{className:'fbadge fbadge-hc'},dominantBrand),
+        React.createElement('span',{style:{fontSize:10,color:'var(--txd)',flex:1}},
+          ' '+resolveName(pkgNames.good)+' · '+resolveName(pkgNames.better)+' · '+resolveName(pkgNames.best)
+        ),
+        React.createElement('span',{style:{marginLeft:'auto',fontSize:11,color:'var(--txd)'}},namesOpen?'▲':'▼')
+      ),
+      namesOpen&&React.createElement('div',{style:{padding:'0 14px 12px',borderTop:'1px solid var(--bdd)'}},
+        React.createElement('div',{style:{fontSize:10,color:'var(--txd)',marginTop:8,marginBottom:10}},
+          'Use ',React.createElement('code',{style:{background:'var(--bg3)',padding:'1px 4px',borderRadius:2}},'{brand}'),' to insert the dominant brand from your selection (',
+          React.createElement('b',null,dominantBrand||'none detected'),').'
+        ),
+        ['good','better','best'].map(tk=>
+          React.createElement('div',{key:tk,style:{display:'flex',alignItems:'center',gap:8,marginBottom:6}},
+            React.createElement('span',{className:tbc(tk),style:{width:50,textAlign:'center',flexShrink:0}},tk.toUpperCase()),
+            React.createElement('input',{
+              className:'inp',style:{flex:1},
+              value:pkgNames[tk],
+              onChange:e=>setPkgNames(n=>({...n,[tk]:e.target.value})),
+              placeholder:`e.g. {brand} ${TM[tk].label} Package`,
+            }),
+            React.createElement('span',{style:{fontSize:10,color:'var(--txd)',minWidth:160,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},
+              '→ '+resolveName(pkgNames[tk])
+            )
+          )
+        ),
+        React.createElement('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginTop:6}},
+          [
+            {label:'Brand + Tier',names:{good:'{brand} Good Package',better:'{brand} Better Package',best:'{brand} Best Package'}},
+            {label:'Brand + Level',names:{good:'{brand} Essential',better:'{brand} Superior',best:'{brand} Elite'}},
+            {label:'Default',names:{good:'Good - Essential Protection',better:'Better - Superior Shield',best:'Best - Elite System'}},
+          ].map(preset=>
+            React.createElement('button',{
+              key:preset.label,className:'btn-ico btn-sm',
+              onClick:()=>setPkgNames(preset.names),
+            },'Use: '+preset.label)
+          )
+        )
+      )
+    ),
     React.createElement('div',{className:'tgrid'},
       ['good','better','best'].map(tk=>{
         const td=TM[tk],rc=RATE_CARDS[tk];
-        const price=calcPrice[tk]||Math.round(rc.rate*squares*pitchMult*storyMult/100)*100;
+        const price=calcPrice[tk]||Math.round(rc.rate*squares*pitchMult*storyMult*regionMult/100)*100;
         const pricePerSq=Math.round(price/squares);
+        const resolvedName=resolveName(pkgNames[tk]);
         const tp=tiers[tk]||[],un=tiers.untiered||[];
         const show=tk==='best'?[...tp,...un]:tp;const mx=tk==='good'?4:tk==='better'?6:10;
         return React.createElement('div',{key:tk,className:`tc${tk==='better'?' tc-b':tk==='best'?' tc-p':''}`,},
           td.badge&&React.createElement('div',{className:'tbdg',style:{background:td.badgeBg}},td.badge),
-          React.createElement('div',{className:'tnm',style:{color:td.color}},td.label),
+          React.createElement('div',{className:'tnm',style:{color:td.color}},resolvedName||td.label),
           // Price + per-sq breakdown
           React.createElement('div',{className:'tier-price-row'},
             React.createElement('div',{className:'tpr',style:{color:td.color}},'$'+price.toLocaleString()),
@@ -2095,6 +2371,9 @@ function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,onNext,on
     React.createElement('div',{style:{fontSize:11,color:'var(--txd)',marginTop:8,textAlign:'center'}},
       'Prices are estimates based on '+squares.toFixed(1)+' squares · '+PITCH[pitch]+' pitch multiplier ('+((pitchMult*100).toFixed(0))+'%) · story multiplier ('+((storyMult*100).toFixed(0))+'%)'
     ),
+    accSet.size>0&&React.createElement('div',{style:{fontSize:11,color:'var(--am)',textAlign:'center',marginTop:4}},
+      '🔧 '+accSet.size+' accessory product'+(accSet.size>1?'s are':' is')+' excluded from packages (catalog-only)'
+    ),
     React.createElement('div',{className:'nav'},React.createElement('button',{className:'btn-g',onClick:onBack},'← Back'),React.createElement('button',{className:'btn',onClick:onNext},'Import to Zuper →'))
   );
 }
@@ -2113,7 +2392,7 @@ function RunControls({running,paused,onPause,onCancel}){
   );
 }
 
-function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
+function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,waste,accIds,pkgNames,regionMult,onBack}){
   const[tab,setTab]=useState('import');
 
   /* ── Import tab state ── */
@@ -2124,8 +2403,11 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
   const[iLogs,sILogs]=useState([]);
   const[iRes,sIRes]=useState(null);
   const[iDone,sIDone]=useState(false);
-  const[iUlm,sIUlm]=useState({});           // labor UID map from import result
-  const[iBundleCands,sIBundleCands]=useState([]); // bundle-classified products
+  const[iUlm,sIUlm]=useState({});
+  const[iBundleCands,sIBundleCands]=useState([]);
+  // Preflight state
+  const[preflight,sPreflight]=useState(null); // null | {checking} | {existCount, rerun, breakdown}
+  const[preflightDismissed,sPreflightDismissed]=useState(false);
   // Bundle creation state
   const[bundleRunning,sBundleRunning]=useState(false);
   const[bundlePaused,sBundlePaused]=useState(false);
@@ -2136,8 +2418,29 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
   const bundleLogRef=useRef(null);
   const iLogRef=useRef(null);
   const selP=useMemo(()=>allProds.filter(p=>selIds.includes(p.product_id)),[allProds,selIds]);
+  // Accessories are excluded from packages but still imported to catalog
+  const accSet=useMemo(()=>new Set(accIds||[]),[accIds]);
   const addILog=m=>sILogs(p=>[...p,'['+new Date().toLocaleTimeString()+'] '+m]);
   const setPS=(k,s,x={})=>sp(p=>({...p,[k]:{...p[k],s,...x}}));
+
+  // ── Preflight: check for existing SRS- products on mount ─────────────────
+  useEffect(()=>{
+    if(!auth||preflight)return;
+    sPreflight({checking:true});
+    (async()=>{
+      try{
+        let total=0,pg=1;
+        while(true){
+          const r=await zf(`${auth.url}product?count=100&page=${pg}`,{headers:zh(auth.key)});
+          const items=r.j?.data||[];
+          total+=items.filter(p=>(p.product_id||'').startsWith('SRS-')).length;
+          if(items.length<100)break;pg++;
+          if(pg>20)break; // safety cap
+        }
+        sPreflight({checking:false,existCount:total,rerun:total>0});
+      }catch(e){sPreflight({checking:false,existCount:0,rerun:false,err:e.message});}
+    })();
+  },[auth]);
 
   const toggleImportPause=()=>{
     const next=!importSig.current.pause;
@@ -2198,7 +2501,7 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
     sImporting(true);sILogs([]);sIRes(null);sIDone(false);
     sp({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:'',errs:[]},products:{s:'idle',l:'Create Material Products (PARTS)',i:'',errs:[]},labor:{s:'idle',l:'Create Labor Products (SERVICE, $0)',i:'',errs:[]},bundles:{s:'idle',l:'Create Bundle Products (BUNDLE)',i:'',errs:[]},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:'',errs:[]},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:'',errs:[]}});
     try{
-      const r=await runImport({auth,selProds:selP,lineItems,mappings,tiers,signal:importSig.current,
+      const r=await runImport({auth,selProds:selP,lineItems,mappings,tiers,waste,accSet,pkgNames,regionMult,signal:importSig.current,
         onPhase:(k,s,x={})=>{
           let i;
           if(x.count!=null)i=`${x.count} tokens`;
@@ -2326,10 +2629,69 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
     return el('div',null,
       el('div',{className:'stats'},
         el('div',{className:'stat'},el('div',{className:'stat-n'},selP.length),el('div',{className:'stat-l'},'Products')),
+        el('div',{className:'stat'},el('div',{className:'stat-n',style:{color:accSet.size?'var(--am)':undefined}},accSet.size||'—'),el('div',{className:'stat-l'},'Accessories')),
         el('div',{className:'stat'},el('div',{className:'stat-n'},Object.keys(mappings).length),el('div',{className:'stat-l'},'Formulas')),
         el('div',{className:'stat'},el('div',{className:'stat-n'},'3'),el('div',{className:'stat-l'},'Packages')),
         iDone&&el('div',{className:'stat'},el('div',{className:'stat-n',style:{color:'var(--gr)'}},tot),el('div',{className:'stat-l'},'Imported'))
       ),
+
+      // ── Preflight banner ────────────────────────────────────────────────
+      !iDone&&!preflightDismissed&&preflight&&!preflight.checking&&preflight.rerun&&
+        el('div',{style:{marginBottom:10,padding:'10px 14px',background:'rgba(245,158,11,.08)',border:'1px solid rgba(245,158,11,.3)',borderRadius:'var(--r8)',display:'flex',alignItems:'flex-start',gap:10}},
+          el('span',{style:{fontSize:16,flexShrink:0}},'⚠️'),
+          el('div',{style:{flex:1}},
+            el('div',{style:{fontSize:12,fontWeight:600,color:'var(--am)',marginBottom:3}},
+              'Re-run detected — '+preflight.existCount+' existing CPQ product'+(preflight.existCount>1?'s':'')+' found in this account'
+            ),
+            el('div',{style:{fontSize:11,color:'var(--txd)',lineHeight:1.5}},
+              'Products with matching SRS- IDs will be reused (not duplicated). Run Cleanup/Delete first if you want a clean slate.'
+            )
+          ),
+          el('button',{className:'btn-ico btn-sm',onClick:()=>sPreflightDismissed(true),style:{flexShrink:0}},'✕')
+        ),
+      !iDone&&!preflightDismissed&&preflight&&preflight.checking&&
+        el('div',{style:{fontSize:11,color:'var(--txd)',marginBottom:8,textAlign:'center'}},'🔍 Checking for existing CPQ products in this account…'),
+
+      // ── Accessories notice ──────────────────────────────────────────────
+      accSet.size>0&&!iDone&&
+        el('div',{style:{marginBottom:8,padding:'7px 12px',background:'rgba(245,158,11,.06)',border:'1px solid rgba(245,158,11,.2)',borderRadius:'var(--r6)',fontSize:11,color:'var(--am)'}},
+          '🔧 '+accSet.size+' accessor'+(accSet.size>1?'ies':'y')+' will be imported to catalog (PARTS/BUNDLE) but excluded from service packages'
+        ),
+
+      // ── Classification preview — shows BEFORE import runs ────────────────
+      !iDone&&(()=>{
+        const classified={BUNDLE:0,PARTS:0,SKIP:0};
+        selP.forEach(p=>{const cl=classifyProd(p);classified[cl]=(classified[cl]||0)+1;});
+        const total=classified.BUNDLE+classified.PARTS+classified.SKIP;
+        return el('div',{style:{marginBottom:10,padding:'10px 14px',background:'var(--bg2)',border:'1px solid var(--bdd)',borderRadius:'var(--r8)'}},
+          el('div',{style:{display:'flex',alignItems:'center',gap:6,marginBottom:8}},
+            el('div',{style:{fontSize:11,fontWeight:600,color:'var(--tx)'}},
+              '🏷️ Product classification preview — '+total+' selected'
+            ),
+            classified.SKIP>0&&el('span',{
+              className:'vtag vtag-warn',
+              title:'These matched service keywords (inspection, delivery, permit etc.) and will not be imported as products',
+            },classified.SKIP+' will be skipped')
+          ),
+          el('div',{style:{display:'flex',gap:8,flexWrap:'wrap'}},
+            el('div',{className:'info-card',style:{flex:1,minWidth:140}},
+              el('div',{className:'info-card-title'},'📦 BUNDLE'),
+              el('div',{style:{fontSize:18,fontWeight:700,color:'var(--gr)',margin:'3px 0'}},classified.BUNDLE),
+              el('div',{className:'info-card-body'},'Material + Labor + Bundle product created each')
+            ),
+            el('div',{className:'info-card',style:{flex:1,minWidth:140}},
+              el('div',{className:'info-card-title'},'🔩 PARTS-only'),
+              el('div',{style:{fontSize:18,fontWeight:700,color:'var(--bl)',margin:'3px 0'}},classified.PARTS),
+              el('div',{className:'info-card-body'},'Material product only (hardware, zero-price, trim items)')
+            ),
+            classified.SKIP>0&&el('div',{className:'info-card',style:{flex:1,minWidth:140,borderColor:'rgba(248,113,113,.2)',background:'rgba(248,113,113,.04)'}},
+              el('div',{className:'info-card-title',style:{color:'var(--er-tx)'}},'⛔ SKIP'),
+              el('div',{style:{fontSize:18,fontWeight:700,color:'var(--er-tx)',margin:'3px 0'}},classified.SKIP),
+              el('div',{className:'info-card-body'},'Matched service keywords — not imported as products')
+            )
+          )
+        );
+      })(),
       pks.map(k=>{
         const p=phases[k],col=pcol[p.s]||'var(--txd)';
         const nc=`pnum${p.s==='active'?' act':p.s==='done'?' dn':''}`;
@@ -2474,8 +2836,335 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,onBack}){
   );
 }
 
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   INFO MODAL — full step-by-step guide with all logic, formulas, conditions
+   ═══════════════════════════════════════════════════════════════════════════ */
+function InfoModal({onClose}){
+  const el=React.createElement;
+  const Pill=({label,type='green'})=>el('span',{className:`info-pill info-pill-${type}`},label);
+  const Card=({title,icon,children,style})=>el('div',{className:'info-card',style},
+    el('div',{className:'info-card-title'},icon&&el('span',null,icon),' ',title),
+    el('div',{className:'info-card-body'},children)
+  );
+  const KV=({k,v})=>el('div',{className:'info-kv'},
+    el('span',{className:'info-kv-k'},k),
+    el('span',{className:'info-kv-v'},v)
+  );
+  const Section=({icon,title,children})=>el('div',{className:'info-section'},
+    el('div',{className:'info-section-hd'},
+      el('span',{className:'icon'},icon),
+      el('h3',null,title)
+    ),
+    children
+  );
+
+  return el('div',{className:'info-overlay',onClick:e=>{if(e.target===e.currentTarget)onClose();}},
+    el('div',{className:'info-modal'},
+      // Header
+      el('div',{className:'info-modal-hd'},
+        el('div',{style:{fontSize:20}},'📖'),
+        el('h2',null,'CPQ Builder — Reference Guide'),
+        el('div',{style:{fontSize:11,color:'var(--txd)',flex:1,marginLeft:4}},'All logic, formulas, and conditions used in this tool'),
+        el('button',{className:'info-close',onClick:onClose},'✕')
+      ),
+
+      el('div',{className:'info-body'},
+
+        // ── Section 1: Import Flow ────────────────────────────────────────
+        el(Section,{icon:'⚙️',title:'Import Engine — 6-Phase Flow'},
+          el('div',null,
+            [
+              {n:'1',title:'Fetch Measurement Tokens',color:'var(--or)',
+               desc:'Calls GET measurements/categories to load all roof measurement tokens from the Zuper account (113 tokens typical). These are referenced by formula expression maps. Also runs ensureProdCat() to find or create a "CPQ Imports" product category UID — required for BUNDLE products.'},
+              {n:'2',title:'Create Material Products (PARTS)',color:'var(--or)',
+               desc:'Creates one PARTS product per selected catalog item. BUNDLE-classified items get "- Material" appended to the name and SRS-{id}-MAT as the product_id. PARTS-only items keep the original name. Runs in chunks of 100 (bulk endpoint) with 8-worker concurrent fallback. 80ms delay between chunks.'},
+              {n:'3',title:'Create Labor Products (SERVICE, $0)',color:'var(--or)',
+               desc:'For every BUNDLE-classified product, creates a matching "- Labor" SERVICE product at $0 price. Uses SRS-{id}-LAB as product_id. Labor rates are $0 by default — update manually in Zuper after import. Same bulk/fallback pattern as Phase 2.'},
+              {n:'4',title:'Create Bundle Products (BUNDLE)',color:'var(--gr)',
+               desc:'Requires both Material UID and Labor UID from Phases 2+3. Creates a BUNDLE product linking both via associated_products. Uses SRS-{id}-BND as product_id. Runs with 8 concurrent workers. product_category is MANDATORY for BUNDLE type — auto-creates "CPQ Imports" category if missing. Must run before packages.'},
+              {n:'5',title:'Create CPQ Formulas',color:'var(--gr)',
+               desc:'Creates CPQ formula records for every mapped line item. Priority: (1) hardcoded industry-standard formula, (2) DB formula_expr with token substitution + CEIL strip. Skips duplicates by formula_key and formula_name. CEIL() unsupported by Zuper — stripped with bracket-matching algorithm; NEXT_WHOLE_NUMBER rounding achieves same ceiling effect.'},
+              {n:'6',title:'Create Service Packages',color:'var(--gr)',
+               desc:'Creates 3 packages (Good/Better/Best) with resolved names from your template. Line items prefer Bundle UIDs over Material UIDs. Products with formula links get unit_price from catalog; unmapped products get $0/qty=0 for manual entry in Zuper.'},
+            ].map(ph=>el('div',{key:ph.n,className:'info-phase-row'},
+              el('div',{className:'info-phase-num',style:{background:ph.color}},ph.n),
+              el('div',{className:'info-phase-content'},
+                el('div',{className:'info-phase-title'},ph.title),
+                el('div',{className:'info-phase-desc'},ph.desc)
+              )
+            ))
+          )
+        ),
+
+        // ── Section 2: Product Classification ────────────────────────────
+        el(Section,{icon:'🏷️',title:'Product Classification — PARTS / SERVICE / BUNDLE'},
+          el('div',{className:'info-grid'},
+            el(Card,{title:'BUNDLE (Material + Labor + Bundle)',icon:'📦'},
+              'Any product with suggested_price > $1 that matches roofing keywords gets a Material, Labor, and Bundle product created. Keywords: shingle, membrane, underlayment, insulation, ridge, vent, flashing, ice/water, starter, hip/ridge, valley metal, drip edge, soffit, fascia, deck armor, felt, siding, panel, board, coating, adhesive, cement, foam adhesive, coping, drain, scupper, skylight.'
+            ),
+            el(Card,{title:'PARTS-only (no labor sibling)',icon:'🔩'},
+              'Products matching hardware/consumable keywords are PARTS-only — no Labor or Bundle created. Keywords: nail, screw, fastener, plate, staple, cap nail, ring shank, bolt, anchor, clip, bracket, hanger, washer, rivet, ferrule, grommet, sleeve, tip, applicator, mixer, gun, hose, brush, roller, paddle, bucket, can, tube, bag, box, pail, kit, tool, cleaner, solvent, primer spray.'
+            ),
+            el(Card,{title:'SKIP (not imported)',icon:'⛔'},
+              'Only TRUE service-type items are skipped — not physical products. Keywords: inspection, consultation, assessment, survey, delivery fee, freight, shipping, disposal, dumpster, permit, warranty, project management, setup fee, mobilization. Zero-price products are NOT skipped — they import as PARTS.'
+            ),
+            el(Card,{title:'Accessories (catalog-only)',icon:'🔧'},
+              'Products you manually tag with the "+ Acc" button in Step 2. Accessories are imported as PARTS/BUNDLE to the catalog but excluded from all Good/Better/Best packages. Use for: pipe boots, caulk, nails, touch-up paint, cleaning supplies — anything in the job but not in the package.'
+            ),
+            el(Card,{title:'Bundle skip conditions',icon:'🚫'},
+              el('div',null,
+                'A bundle is NOT created even for BUNDLE-classified products if:',
+                el('ul',{style:{margin:'4px 0 0 14px',padding:0,lineHeight:1.8}},
+                  el('li',null,'Material UID or Labor UID is missing (Phase 2/3 failed)'),
+                  el('li',null,'Product name contains "optional" or "addon"'),
+                  el('li',null,'suggested_price ≤ $1 (treated as noise)')
+                )
+              )
+            ),
+            el(Card,{title:'Creation order (strict)',icon:'⚠️'},
+              el('div',null,
+                el('div',{style:{fontFamily:'monospace',fontSize:10,background:'var(--bg3)',padding:'6px 8px',borderRadius:4,marginBottom:4}},
+                  'PARTS → SERVICE → BUNDLE → Formulas → Packages'
+                ),
+                'Never create BUNDLE before both Material and Labor UIDs exist. Zuper rejects bundles that reference non-existent products.'
+              )
+            )
+          )
+        ),
+
+        // ── Section 3: Industry Formulas ─────────────────────────────────
+        el(Section,{icon:'📐',title:'Hardcoded Industry-Standard Formulas (11 total)'},
+          el('div',{style:{marginBottom:8,fontSize:11,color:'var(--txd)'}},'Source: verified across 40+ US East and US West Zuper accounts. These take priority over DB formula_expr. Waste % values are inlined from your Step 3 override — not pulled from the account measurement token.'),
+          el('div',{style:{background:'var(--bg2)',border:'1px solid var(--bdd)',borderRadius:'var(--r8)',overflow:'hidden'}},
+            el('div',{style:{display:'grid',gridTemplateColumns:'175px 1fr 200px',gap:0,padding:'6px 10px',background:'var(--bg3)',borderBottom:'1px solid var(--bdd)',fontSize:10,fontWeight:700,color:'var(--txd)',textTransform:'uppercase',letterSpacing:'.05em'}},
+              el('div',null,'Line Item'),el('div',null,'Expression (tokens as $N)'),el('div',null,'Coverage rule')
+            ),
+            [
+              {name:'Shingles (squares)',  expr:'(Area × (1 + Waste%/100)) / 100',        note:'Waste % from your override (default 12%)'},
+              {name:'Synthetic Underlayment',expr:'Area / 1000',                           note:'1 roll = 1,000 SQFT'},
+              {name:'Self-Adhered / HT',  expr:'Area / 200',                               note:'1 roll = 200 SQFT (2 SQ/roll)'},
+              {name:'Ice & Water Shield', expr:'(Eaves + Valleys) × 1.1 / 66',            note:'1 roll = 66 LF; 10% waste built-in'},
+              {name:'Ridge Vents',        expr:'Ridges Length / 4',                         note:'1 section = 4 LF'},
+              {name:'Drip Edge',          expr:'(Rakes + Eaves) / 10',                     note:'1 piece = 10 LF'},
+              {name:'Starter Shingles',   expr:'(Eaves + Rakes) / 120',                    note:'1 bundle = 120 LF'},
+              {name:'Hip & Ridge Cap',    expr:'(Hip + Ridges) / 33',                      note:'1 bundle = 33 LF'},
+              {name:'Valley Metal',       expr:'Valleys Length / 10',                       note:'1 piece = 10 LF'},
+              {name:'Step Flashing',      expr:'(Step × 2.4 × (1 + Waste%/100)) / 100',   note:'2.4 pieces per LF; waste override applied'},
+              {name:'Coil Nails',         expr:'(Area / 100) / 15',                        note:'Squares ÷ 15 SQ per box'},
+            ].map((row,i)=>el('div',{key:i,className:'info-formula-row'},
+              el('div',{className:'info-formula-name'},row.name),
+              el('div',{className:'info-formula-expr'},row.expr),
+              el('div',{className:'info-formula-note'},row.note)
+            ))
+          )
+        ),
+
+        // ── Section 4: Waste Factor Overrides ────────────────────────────
+        el(Section,{icon:'🔢',title:'Waste Factor Overrides (Step 3)'},
+          el('div',{style:{marginBottom:8,fontSize:11,color:'var(--txd)'}},'Waste % is inlined as a constant into formula expressions at import time — overrides the account "Suggested Waste Percentage %" measurement token. This makes formulas predictable regardless of what the account EagleView/Hover report provides.'),
+          el('div',{className:'info-grid'},
+            el(Card,{title:'Shingles (default 12%)',icon:'🏠'},
+              'Applied to: anything matching "shingle" that is not starter/hip-ridge/cap. For simple gabled roofs use 10%. For complex hip/valley roofs use 15–20%. Affects both Shingles formula and Step Flashing formula.'
+            ),
+            el(Card,{title:'Synthetic Underlayment (default 10%)',icon:'📜'},
+              'Applied to: synthetic/felt/tiger paw/deck armor/rhino/pro armor underlayment products. Standard 10% accounts for cuts and overlaps at hips and ridges.'
+            ),
+            el(Card,{title:'Starter Shingles (default 5%)',icon:'📦'},
+              'Applied to: products matching "starter". Low waste because starter runs in a straight line at eaves and rakes with minimal cutting.'
+            ),
+            el(Card,{title:'Other (default 10%)',icon:'📋'},
+              'Applied to: all other formula products not matched by the above categories. Covers miscellaneous items like valley metal, step flashing, and any DB-formula products.'
+            )
+          )
+        ),
+
+        // ── Section 5: Package Pricing ───────────────────────────────────
+        el(Section,{icon:'💰',title:'Package Pricing — Tier Cards (Step 4)'},
+          el('div',{className:'info-grid-3'},
+            el(Card,{title:'Good — Rate card baseline',icon:'🟢'},
+              el('div',null,
+                el(KV,{k:'Rate card',v:'$290 / sq'}),
+                el(KV,{k:'Labor factor',v:'60% of total (material = 60%)'}),
+                el(KV,{k:'Warranty',v:'5-yr workmanship · Mfr. standard'}),
+                el('div',{style:{marginTop:4,color:'var(--txd)'}},'Essential protection tier. If actual product prices are available, material cost ÷ 0.60 gives total estimate. Rate card is fallback only.')
+              )
+            ),
+            el(Card,{title:'Better — Upgraded system',icon:'🟠'},
+              el('div',null,
+                el(KV,{k:'Rate card',v:'$430 / sq'}),
+                el(KV,{k:'Labor factor',v:'58% of total (material = 58%)'}),
+                el(KV,{k:'Warranty',v:'10-yr workmanship · 30-yr mfr.'}),
+                el('div',{style:{marginTop:4,color:'var(--txd)'}},'Most Popular tier. Includes all Better-tier products plus untiered products.')
+              )
+            ),
+            el(Card,{title:'Best — Full system',icon:'🟣'},
+              el('div',null,
+                el(KV,{k:'Rate card',v:'$615 / sq'}),
+                el(KV,{k:'Labor factor',v:'55% of total (material = 55%)'}),
+                el(KV,{k:'Warranty',v:'10-yr workmanship · Lifetime mfr.'}),
+                el('div',{style:{marginTop:4,color:'var(--txd)'}},'Premium Elite tier. Includes all Best-tier, Better-tier, and untiered products in one comprehensive system.')
+              )
+            )
+          ),
+          el('div',{className:'info-grid',style:{marginTop:10}},
+            el(Card,{title:'Pitch Multipliers',icon:'📐'},
+              el('div',null,
+                el(KV,{k:'Low (0–3/12)',v:'0.90× (10% reduction)'}),
+                el(KV,{k:'Standard (4–6/12)',v:'1.00× (baseline)'}),
+                el(KV,{k:'Steep (7–9/12)',v:'1.15× (+15%)'}),
+                el(KV,{k:'Very Steep (10+/12)',v:'1.30× (+30%)'}),
+                el('div',{style:{marginTop:4,color:'var(--txd)'}},'Multiplied into the final price estimate. Does not affect imported formula expressions.')
+              )
+            ),
+            el(Card,{title:'Story Multipliers',icon:'🏗️'},
+              el('div',null,
+                el(KV,{k:'1-Story',v:'1.00× (baseline)'}),
+                el(KV,{k:'2-Story',v:'1.10× (+10%)'}),
+                el(KV,{k:'3-Story',v:'1.22× (+22%)'}),
+                el('div',{style:{marginTop:4,color:'var(--txd)'}},'Reflects increased labor cost for elevated work. Applied on top of pitch multiplier.')
+              )
+            ),
+            el(Card,{title:'Regional Price Adjustment',icon:'📍'},
+              el('div',null,
+                el(KV,{k:'Northeast / NYC',v:'1.18× (+18%)'}),
+                el(KV,{k:'West Coast / LA',v:'1.15× (+15%)'}),
+                el(KV,{k:'Texas',v:'0.97× (−3%)'}),
+                el(KV,{k:'Midwest',v:'0.95× (−5%)'}),
+                el(KV,{k:'Southeast',v:'0.93× (−7%)'}),
+                el('div',{style:{marginTop:4,color:'var(--txd)'}},'Applied after pitch + story multipliers. Reflects real regional variation in material + labor costs vs national catalog average.')
+              )
+            ),
+            el(Card,{title:'Package Name Templates',icon:'🏷️'},
+              el('div',null,
+                el('div',{style:{marginBottom:6,color:'var(--txd)'}},'Use ',el('code',{style:{background:'var(--bg3)',padding:'1px 4px',borderRadius:2}},'{brand}'),' in any name template — resolves to the dominant brand from your selected products (determined by frequency count of manufacturer_norm field).'),
+                el(KV,{k:'Preset: Brand + Tier',v:'{brand} Good / Better / Best Package'}),
+                el(KV,{k:'Preset: Brand + Level',v:'{brand} Essential / Superior / Elite'}),
+                el(KV,{k:'Preset: Default',v:'Good/Better/Best - Protection/Shield/System'}),
+                el('div',{style:{marginTop:4,color:'var(--txd)'}},'If {brand} is empty (no brand detected), whitespace is collapsed automatically.')
+              )
+            )
+          )
+        ),
+
+        // ── Section 6: Auto-Mapping Logic ────────────────────────────────
+        el(Section,{icon:'🔗',title:'Line Item Auto-Mapping Logic (Step 3)'},
+          el('div',{style:{marginBottom:10,fontSize:11,color:'var(--txd)'}},'Three-tier matching runs in priority order. First match wins — the tool never tries lower tiers if a higher one succeeds.'),
+          el('div',{className:'info-grid'},
+            el(Card,{title:'Tier 1 — Exact field match',icon:'✅'},
+              'Checks proposal_line_item field in the SRS catalog row. If it exactly matches a display_name in proposal_line_items table (case-insensitive), that mapping is used. Most reliable — sourced directly from the SRS data.'
+            ),
+            el(Card,{title:'Tier 2 — Partial string match',icon:'🔍'},
+              'If Tier 1 fails, checks if the proposal_line_item value contains a line item display_name, or vice versa. Handles cases like "Architectural Shingles" matching "Shingles".'
+            ),
+            el(Card,{title:'Tier 3 — Fuzzy keyword match',icon:'🧠'},
+              '20-pattern keyword library. Matches on product name + category against patterns like: shingle → Shingles, underlayment → Underlayment — Synthetic, ice.*water → Ice & Water — Standard, starter → Starter Strip, hip.*ridge → Hip & Ridge Cap, drip.*edge → Drip Edge, ridge.*vent → Ridge Vent, valley → Valley Metal, step.*flash → Step Flashing.'
+            ),
+            el(Card,{title:'Formula source priority',icon:'📐'},
+              el('div',null,
+                el('div',{style:{marginBottom:4}},el('span',{className:'info-pill info-pill-green'},'✓ Industry std'),' — Used first. 11 hardcoded formulas proven across 40+ accounts. Waste % inlined from your override.'),
+                el('div',null,el('span',{className:'info-pill info-pill-blue'},'~ DB formula'),' — Fallback. Uses formula_expr from proposal_line_items table with token substitution. May fail if token names differ per account.')
+              )
+            )
+          )
+        ),
+
+        // ── Section 7: Dedup + Re-runs ────────────────────────────────────
+        el(Section,{icon:'🔄',title:'Dedup Logic & Re-run Safety'},
+          el('div',{className:'info-grid'},
+            el(Card,{title:'Product dedup',icon:'🔍'},
+              'Before creating products, fetches all existing products (paginated). Checks product_id field (SRS-{id}, SRS-{id}-MAT, SRS-{id}-LAB, SRS-{id}-BND). If found, reuses existing UID — no duplicate created. Logged as "Reused" in the Excel report.'
+            ),
+            el(Card,{title:'Formula dedup',icon:'🔍'},
+              'Fetches all existing CPQ formulas before Phase 5. Matches by formula_key (e.g. shingles_cpq) and formula_name. If either matches, reuses existing formula UID. Prevents "duplicate formula key" errors on re-runs.'
+            ),
+            el(Card,{title:'Bundle dedup',icon:'🔍'},
+              'Uses the same existProdByExtId map loaded in Phase 2. Checks for SRS-{id}-BND before attempting bundle creation. Re-uses existing bundle UIDs on re-runs without API calls.'
+            ),
+            el(Card,{title:'Preflight check',icon:'⚠️'},
+              'On Step 5 load, runs a background check counting all products with "SRS-" prefix in the account. If any exist, shows an amber warning banner: "Re-run detected — N existing CPQ products found." Helps you decide whether to run Cleanup first or proceed knowing dedup will handle it.'
+            )
+          )
+        ),
+
+        // ── Section 8: Concurrent Workers ────────────────────────────────
+        el(Section,{icon:'⚡',title:'Performance — Concurrent Workers & Rate Limits'},
+          el('div',{className:'info-grid-3'},
+            el(Card,{title:'Bulk chunks',icon:'📦'},
+              el('div',null,
+                el(KV,{k:'Chunk size',v:'100 items per bulk POST'}),
+                el(KV,{k:'Delay between chunks',v:'80ms'}),
+                el(KV,{k:'Endpoint',v:'POST products/bulk'}),
+                el('div',{style:{marginTop:4,color:'var(--txd)'}},'Bulk endpoint is tried first. If it fails (404, network error), automatically falls back to individual creates.')
+              )
+            ),
+            el(Card,{title:'Individual fallback',icon:'🔄'},
+              el('div',null,
+                el(KV,{k:'Concurrent workers',v:'8 parallel requests'}),
+                el(KV,{k:'Used for',v:'Products, Labor, Bundles, Formulas'}),
+                el('div',{style:{marginTop:4,color:'var(--txd)'}},'When bulk fails, 8 workers run in parallel windows. For 100 products: ~13 windows × 8 = same 100 products, no duplication.')
+              )
+            ),
+            el(Card,{title:'Deletion engine',icon:'🗑️'},
+              el('div',null,
+                el(KV,{k:'Concurrent DELETE workers',v:'10 parallel'}),
+                el(KV,{k:'Formulas filter',v:'is_custom === true only'}),
+                el('div',{style:{marginTop:4,color:'var(--txd)'}},'Cleanup tab uses 10 concurrent workers with pause/cancel support. Fetches all UIDs first (paginated), confirms with user, then deletes.')
+              )
+            )
+          )
+        ),
+
+        // ── Section 9: Naming Conventions ────────────────────────────────
+        el(Section,{icon:'📝',title:'Naming Conventions & product_id Keys'},
+          el('div',{className:'info-grid'},
+            el(Card,{title:'Material (PARTS)',icon:'🔩'},
+              el('div',null,
+                el(KV,{k:'product_name',v:'{SRS catalog name} - Material'}),
+                el(KV,{k:'product_id',v:'SRS-{catalog_id}-MAT'}),
+                el(KV,{k:'product_type',v:'PARTS'}),
+                el(KV,{k:'price',v:'suggested_price from SRS catalog'})
+              )
+            ),
+            el(Card,{title:'Labor (SERVICE)',icon:'👷'},
+              el('div',null,
+                el(KV,{k:'product_name',v:'{SRS catalog name} - Labor'}),
+                el(KV,{k:'product_id',v:'SRS-{catalog_id}-LAB'}),
+                el(KV,{k:'product_type',v:'SERVICE'}),
+                el(KV,{k:'price',v:'$0.00 (update manually in Zuper)'})
+              )
+            ),
+            el(Card,{title:'Bundle (BUNDLE)',icon:'📦'},
+              el('div',null,
+                el(KV,{k:'product_name',v:'{SRS catalog name}'}),
+                el(KV,{k:'product_id',v:'SRS-{catalog_id}-BND'}),
+                el(KV,{k:'product_type',v:'BUNDLE'}),
+                el(KV,{k:'price',v:'material price (labor = $0)'}),
+                el(KV,{k:'associated_products',v:'[Material UID, Labor UID]'})
+              )
+            ),
+            el(Card,{title:'PARTS-only (no bundle)',icon:'🔩'},
+              el('div',null,
+                el(KV,{k:'product_name',v:'{SRS catalog name} (unchanged)'}),
+                el(KV,{k:'product_id',v:'SRS-{catalog_id}'}),
+                el(KV,{k:'product_type',v:'PARTS'}),
+                el(KV,{k:'when',v:'PARTS_ONLY_RE match or price ≤ $1'})
+              )
+            )
+          )
+        ),
+
+        el('div',{style:{textAlign:'center',padding:'16px 0 4px',fontSize:11,color:'var(--txd)',borderTop:'1px solid var(--bdd)'}},
+          'Zuper CPQ Builder · Internal Tool · Built by Zuper Solutions Team · ',new Date().getFullYear()
+        )
+      )
+    )
+  );
+}
+
 function App(){
   const[theme,setTheme]=useState('light');
+  const[showInfo,sShowInfo]=useState(false);
   const[step,ss]=useState(0);const[mx,smx]=useState(0);
   const[auth,sa]=useState(null);
   const[prods,sP]=useState([]);const[fmap,sF]=useState({});
@@ -2483,6 +3172,12 @@ function App(){
   const[selIds,setSel]=useState([]);
   const[lis,sLis]=useState([]);const[maps,sMaps]=useState({});
   const[tiers,sTiers]=useState({good:[],better:[],best:[],untiered:[]});
+  // Waste factor overrides (%) per product category
+  const[waste,sWaste]=useState({shingles:12,underlayment:10,starter:5,other:10});
+  // Accessories: product_ids marked as accessories — excluded from packages
+  const[accIds,sAccIds]=useState(new Set());
+  const[pkgNames,sPkgNames]=useState({good:'Good - Essential Protection',better:'Better - Superior Shield',best:'Best - Elite System'});
+  const[regionMult,sRegionMult]=useState(1.0);
 
   useEffect(()=>{document.documentElement.setAttribute('data-theme',theme);},[theme]);
 
@@ -2494,6 +3189,18 @@ function App(){
   const go=n=>{if(n<=mx)ss(n);};
   const adv=n=>{ss(n);smx(m=>Math.max(m,n));};
 
+  // ── Logout: reset all state back to Step 1 ──
+  const logout=useCallback(()=>{
+    if(step>0&&!window.confirm('Log out and clear all selections?'))return;
+    sa(null);ss(0);smx(0);
+    setSel([]);sLis([]);sMaps({});
+    sTiers({good:[],better:[],best:[],untiered:[]});
+    sWaste({shingles:12,underlayment:10,starter:5,other:10});
+    sAccIds(new Set());
+    sPkgNames({good:'Good - Essential Protection',better:'Better - Superior Shield',best:'Best - Elite System'});
+    sRegionMult(1.0);
+  },[step]);
+
   return React.createElement('div',null,
     // Internal tool banner
     React.createElement('div',{className:'internal-banner'},
@@ -2504,20 +3211,33 @@ function App(){
       React.createElement('span',null,'Internal Tool — Zuper CPQ Builder'),
       React.createElement('span',{style:{marginLeft:'auto',opacity:.6,fontWeight:400}},new Date().getFullYear()+' · For internal use only')
     ),
+    showInfo&&React.createElement(InfoModal,{onClose:()=>sShowInfo(false)}),
     React.createElement('div',{className:'card'},
       React.createElement('div',{className:'hd'},
         React.createElement('div',{className:'logo'},'ZUPER'),
         React.createElement('span',{className:'hd-t'},'CPQ Builder — Service Packages'),
         auth&&React.createElement('div',{className:'acc-chip'},React.createElement('div',{className:'acc-dot'}),React.createElement('span',{className:'acc-nm'},auth.name)),
+        auth&&React.createElement('button',{
+          className:'theme-btn',
+          onClick:logout,
+          style:{color:'var(--er-tx)',borderColor:'rgba(248,113,113,.3)',background:'rgba(248,113,113,.06)'},
+          title:'Log out and return to Step 1',
+        },'⏻ Logout'),
+        React.createElement('button',{
+          className:'theme-btn',
+          onClick:()=>sShowInfo(true),
+          style:{fontWeight:600},
+          title:'Open step-by-step reference guide',
+        },'ℹ Guide'),
         React.createElement('button',{className:'theme-btn',onClick:()=>setTheme(t=>t==='dark'?'light':'dark')},theme==='dark'?'☀ Light mode':'🌙 Dark mode')
       ),
       React.createElement(Steps,{step,maxStep:mx,setStep:go}),
       React.createElement('div',{className:'body'},
         step===0&&React.createElement(Step1,{onSuccess:handleAuth}),
         step===1&&React.createElement(Step2,{onNext:()=>adv(2),selIds,setSelIds:setSel,allProds:prods,fmap,prodsLoaded:loaded,loadProgress:prog}),
-        step===2&&React.createElement(Step3,{selIds,allProds:prods,fmap,lineItems:lis,setLineItems:sLis,mappings:maps,setMappings:sMaps,onNext:()=>adv(3),onBack:()=>ss(1)}),
-        step===3&&React.createElement(Step4,{selIds,allProds:prods,fmap,lineItems:lis,mappings:maps,tiers,setTiers:sTiers,onNext:()=>adv(4),onBack:()=>ss(2)}),
-        step===4&&React.createElement(Step5,{auth,selIds,allProds:prods,lineItems:lis,mappings:maps,tiers,fmap,onBack:()=>ss(3)})
+        step===2&&React.createElement(Step3,{selIds,allProds:prods,fmap,lineItems:lis,setLineItems:sLis,mappings:maps,setMappings:sMaps,waste,setWaste:sWaste,accIds,setAccIds:sAccIds,onNext:()=>adv(3),onBack:()=>ss(1)}),
+        step===3&&React.createElement(Step4,{selIds,allProds:prods,fmap,lineItems:lis,mappings:maps,tiers,setTiers:sTiers,accIds,pkgNames,setPkgNames:sPkgNames,regionMult,setRegionMult:sRegionMult,onNext:()=>adv(4),onBack:()=>ss(2)}),
+        step===4&&React.createElement(Step5,{auth,selIds,allProds:prods,lineItems:lis,mappings:maps,tiers,fmap,waste,accIds,pkgNames,regionMult,onBack:()=>ss(3)})
       )
     )
   );
