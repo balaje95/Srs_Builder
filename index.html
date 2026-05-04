@@ -998,13 +998,17 @@ function mkFormula(li,toks,wasteOverride){
     c++;
   }
   if(!em.length)return null;
-  // Use bracket-matching stripper — handles any nesting depth
-  const expr=stripCeil(mapped.replace(/\s+/g,''));
+  // Detect whether original expression had CEIL — determines rounding mechanism:
+  // CEIL present  → strip it + use NEXT_WHOLE_NUMBER (ceiling behaviour preserved via rounding)
+  // No CEIL       → leave expression untouched, use NO_ROUNDING (formula already precise)
+  const hadCeil=/CEIL\s*\(/i.test(mapped);
+  const expr=hadCeil?stripCeil(mapped.replace(/\s+/g,'')):mapped.replace(/\s+/g,'');
+  const rounding=hadCeil?'NEXT_WHOLE_NUMBER':'NO_ROUNDING';
   const ck=li.display_name.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'').substring(0,50)+'_cpq';
-  return{formula:{formula_name:`${li.display_name} (CPQ)`,formula_key:ck,formula_category:'AREA_MEASUREMENT',formula_description:li.display_name,formula:{expression:expr,expression_map:em,rounding_mechanism:'NEXT_WHOLE_NUMBER'}}};
+  return{formula:{formula_name:`${li.display_name} (CPQ)`,formula_key:ck,formula_category:'AREA_MEASUREMENT',formula_description:li.display_name,formula:{expression:expr,expression_map:em,rounding_mechanism:rounding}}};
 }
 
-async function runImport({auth,selProds,lineItems,mappings,tiers,waste,accSet,pkgNames,regionMult,signal,onPhase,onLog}){
+async function runImport({auth,selProds,lineItems,mappings,tiers,waste,accSet,pkgNames,signal,onPhase,onLog}){
   const sig=signal||{cancel:false,pause:false};
   const{key,url}=auth,log=m=>onLog&&onLog(m);
   async function chk(){while(sig.pause&&!sig.cancel)await slp(200);if(sig.cancel)throw new Error('CANCELLED');}
@@ -1282,7 +1286,9 @@ async function runImport({auth,selProds,lineItems,mappings,tiers,waste,accSet,pk
     if(existUid){fu[li.id]=existUid;fReused++;fR.push({name:li.display_name,uid:existUid,ok:true,reused:true});}
     else fps.push({li,fp});
   }
-  log(`Formulas: ${fps.length} new, ${fReused} reused, ${fsk} skipped`);
+  const ceilCount=fps.filter(x=>x.fp.formula.formula.rounding_mechanism==='NEXT_WHOLE_NUMBER').length;
+  const noRoundCount=fps.filter(x=>x.fp.formula.formula.rounding_mechanism==='NO_ROUNDING').length;
+  log(`Formulas: ${fps.length} new, ${fReused} reused, ${fsk} skipped — rounding: ${ceilCount} NEXT_WHOLE_NUMBER (had CEIL), ${noRoundCount} NO_ROUNDING`);
 
   for(const[,chunk]of cks(fps,BULK).entries()){
     await chk();let ok=false;
@@ -2165,11 +2171,10 @@ function Step3({selIds,allProds,fmap,lineItems,setLineItems,mappings,setMappings
   );
 }
 
-function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,accIds,pkgNames,setPkgNames,regionMult,setRegionMult,onNext,onBack}){
+function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,accIds,pkgNames,setPkgNames,onNext,onBack}){
   const[sqft,setSqft]=useState(2200);const[pitch,setPitch]=useState('standard');const[story,setStory]=useState('1');
   // #2 — Package name templates: {brand} and {tier} tokens supported
   const[namesOpen,setNamesOpen]=useState(false);
-  const[regionOpen,setRegionOpen]=useState(false);
   const REGIONS_PRESET=[
     {label:'National avg (1.00×)',v:1.00},
     {label:'Northeast / NYC (1.18×)',v:1.18},
@@ -2204,25 +2209,15 @@ function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,accIds,pk
   // Price per tier using actual product suggested_prices × UOM-aware qty estimates
   // Falls back to industry rate card if no products have prices
   const calcPrice=useMemo(()=>{
+    // Use industry rate cards — reliable and consistent regardless of catalog size.
+    // Material cost summing inflates totals when 400+ products are selected because
+    // trim/siding/specialty items get roof-area quantities applied incorrectly.
     const result={};
     ['good','better','best'].forEach(tk=>{
-      const tp=tiers[tk]||[],un=tiers.untiered||[];
-      const show=tk==='best'?[...tp,...un]:tp;
-      const allForPrice=tk==='best'?[...tp,...un]:[...tp,...(tk==='better'?un.filter(p=>normT(fmap[p.product_id]?.family_tier||p.family_tier)!=='good'):[] )];
-      
-      // Sum actual product costs using UOM-aware estimator
-      const materialCost=allForPrice.reduce((s,p)=>s+estProdCost(p,sqft,pitchMult,storyMult),0);
-      
-      if(materialCost>0){
-        const laborFactor=tk==='good'?0.60:tk==='better'?0.58:0.55;
-        const totalEst=(materialCost/laborFactor)*regionMult;
-        result[tk]=Math.round(totalEst/100)*100;
-      }else{
-        result[tk]=Math.round(RATE_CARDS[tk].rate*squares*pitchMult*storyMult*regionMult/100)*100;
-      }
+      result[tk]=Math.round(RATE_CARDS[tk].rate*squares*pitchMult*storyMult/100)*100;
     });
     return result;
-  },[tiers,fmap,sqft,pitchMult,storyMult,selIds]);
+  },[sqft,pitchMult,storyMult]);
 
   const formulaCount=Object.keys(mappings).filter(k=>mappings[k]).length;
 
@@ -2240,49 +2235,7 @@ function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,accIds,pk
       )
     ),
 
-    // ── Feature #5: Regional Price Adjustment ─────────────────────────────
-    React.createElement('div',{style:{marginBottom:8,background:'var(--bg2)',border:'1px solid var(--bdd)',borderRadius:'var(--r8)',overflow:'hidden'}},
-      React.createElement('div',{
-        style:{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',userSelect:'none'},
-        onClick:()=>setRegionOpen(o=>!o),
-      },
-        React.createElement('span',{style:{fontSize:11,fontWeight:600,color:'var(--tx)'}},
-          '📍 Regional Price Adjustment'
-        ),
-        regionMult!==1.0&&React.createElement('span',{className:'fbadge fbadge-hc'},regionMult.toFixed(2)+'×'),
-        regionMult===1.0&&React.createElement('span',{style:{fontSize:10,color:'var(--txd)'}},'National avg'),
-        React.createElement('span',{style:{marginLeft:'auto',fontSize:11,color:'var(--txd)'}},regionOpen?'▲':'▼')
-      ),
-      regionOpen&&React.createElement('div',{style:{padding:'0 14px 12px',borderTop:'1px solid var(--bdd)'}},
-        React.createElement('div',{style:{fontSize:10,color:'var(--txd)',marginBottom:8,marginTop:8}},
-          'Adjusts all package price estimates. Material prices in the SRS catalog are national averages — apply a regional multiplier to reflect local market rates.'
-        ),
-        React.createElement('div',{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
-          REGIONS_PRESET.filter(r=>r.v!=='custom').map(r=>
-            React.createElement('button',{
-              key:r.v,
-              className:'btn-ico btn-sm',
-              style:{background:regionMult===r.v?'var(--or3)':undefined,color:regionMult===r.v?'var(--or)':undefined,borderColor:regionMult===r.v?'var(--or)':undefined},
-              onClick:()=>setRegionMult(r.v),
-            },r.label)
-          )
-        ),
-        React.createElement('div',{style:{display:'flex',alignItems:'center',gap:8}},
-          React.createElement('label',{style:{fontSize:11,color:'var(--txd)',whiteSpace:'nowrap'}},'Custom multiplier:'),
-          React.createElement('input',{
-            className:'inp',type:'number',min:0.5,max:2.0,step:0.01,
-            style:{width:80,textAlign:'center'},
-            value:regionMult.toFixed(2),
-            onChange:e=>setRegionMult(Math.max(0.5,Math.min(2.0,parseFloat(e.target.value)||1))),
-          }),
-          React.createElement('span',{style:{fontSize:11,color:'var(--txd)'}},
-            regionMult===1.0?'No adjustment':`${regionMult>1?'+':''}${((regionMult-1)*100).toFixed(0)}% vs national avg`
-          )
-        )
-      )
-    ),
-
-    // ── Feature #2: Package Name Templates ────────────────────────────────
+        // ── Feature #2: Package Name Templates ────────────────────────────────
     React.createElement('div',{style:{marginBottom:10,background:'var(--bg2)',border:'1px solid var(--bdd)',borderRadius:'var(--r8)',overflow:'hidden'}},
       React.createElement('div',{
         style:{display:'flex',alignItems:'center',gap:10,padding:'8px 14px',cursor:'pointer',userSelect:'none'},
@@ -2331,7 +2284,7 @@ function Step4({selIds,allProds,fmap,lineItems,mappings,tiers,setTiers,accIds,pk
     React.createElement('div',{className:'tgrid'},
       ['good','better','best'].map(tk=>{
         const td=TM[tk],rc=RATE_CARDS[tk];
-        const price=calcPrice[tk]||Math.round(rc.rate*squares*pitchMult*storyMult*regionMult/100)*100;
+        const price=calcPrice[tk]||Math.round(rc.rate*squares*pitchMult*storyMult/100)*100;
         const pricePerSq=Math.round(price/squares);
         const resolvedName=resolveName(pkgNames[tk]);
         const tp=tiers[tk]||[],un=tiers.untiered||[];
@@ -2392,7 +2345,7 @@ function RunControls({running,paused,onPause,onCancel}){
   );
 }
 
-function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,waste,accIds,pkgNames,regionMult,onBack}){
+function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,waste,accIds,pkgNames,onBack}){
   const[tab,setTab]=useState('import');
 
   /* ── Import tab state ── */
@@ -2501,7 +2454,7 @@ function Step5({auth,selIds,allProds,lineItems,mappings,tiers,fmap,waste,accIds,
     sImporting(true);sILogs([]);sIRes(null);sIDone(false);
     sp({tokens:{s:'idle',l:'Fetch Measurement Tokens',i:'',errs:[]},products:{s:'idle',l:'Create Material Products (PARTS)',i:'',errs:[]},labor:{s:'idle',l:'Create Labor Products (SERVICE, $0)',i:'',errs:[]},bundles:{s:'idle',l:'Create Bundle Products (BUNDLE)',i:'',errs:[]},formulas:{s:'idle',l:'Create CPQ Formulas (Bulk)',i:'',errs:[]},packages:{s:'idle',l:'Create Service Packages (Bulk)',i:'',errs:[]}});
     try{
-      const r=await runImport({auth,selProds:selP,lineItems,mappings,tiers,waste,accSet,pkgNames,regionMult,signal:importSig.current,
+      const r=await runImport({auth,selProds:selP,lineItems,mappings,tiers,waste,accSet,pkgNames,signal:importSig.current,
         onPhase:(k,s,x={})=>{
           let i;
           if(x.count!=null)i=`${x.count} tokens`;
@@ -3025,16 +2978,7 @@ function InfoModal({onClose}){
                 el('div',{style:{marginTop:4,color:'var(--txd)'}},'Reflects increased labor cost for elevated work. Applied on top of pitch multiplier.')
               )
             ),
-            el(Card,{title:'Regional Price Adjustment',icon:'📍'},
-              el('div',null,
-                el(KV,{k:'Northeast / NYC',v:'1.18× (+18%)'}),
-                el(KV,{k:'West Coast / LA',v:'1.15× (+15%)'}),
-                el(KV,{k:'Texas',v:'0.97× (−3%)'}),
-                el(KV,{k:'Midwest',v:'0.95× (−5%)'}),
-                el(KV,{k:'Southeast',v:'0.93× (−7%)'}),
-                el('div',{style:{marginTop:4,color:'var(--txd)'}},'Applied after pitch + story multipliers. Reflects real regional variation in material + labor costs vs national catalog average.')
-              )
-            ),
+
             el(Card,{title:'Package Name Templates',icon:'🏷️'},
               el('div',null,
                 el('div',{style:{marginBottom:6,color:'var(--txd)'}},'Use ',el('code',{style:{background:'var(--bg3)',padding:'1px 4px',borderRadius:2}},'{brand}'),' in any name template — resolves to the dominant brand from your selected products (determined by frequency count of manufacturer_norm field).'),
@@ -3177,7 +3121,6 @@ function App(){
   // Accessories: product_ids marked as accessories — excluded from packages
   const[accIds,sAccIds]=useState(new Set());
   const[pkgNames,sPkgNames]=useState({good:'Good - Essential Protection',better:'Better - Superior Shield',best:'Best - Elite System'});
-  const[regionMult,sRegionMult]=useState(1.0);
 
   useEffect(()=>{document.documentElement.setAttribute('data-theme',theme);},[theme]);
 
@@ -3198,7 +3141,6 @@ function App(){
     sWaste({shingles:12,underlayment:10,starter:5,other:10});
     sAccIds(new Set());
     sPkgNames({good:'Good - Essential Protection',better:'Better - Superior Shield',best:'Best - Elite System'});
-    sRegionMult(1.0);
   },[step]);
 
   return React.createElement('div',null,
@@ -3236,8 +3178,8 @@ function App(){
         step===0&&React.createElement(Step1,{onSuccess:handleAuth}),
         step===1&&React.createElement(Step2,{onNext:()=>adv(2),selIds,setSelIds:setSel,allProds:prods,fmap,prodsLoaded:loaded,loadProgress:prog}),
         step===2&&React.createElement(Step3,{selIds,allProds:prods,fmap,lineItems:lis,setLineItems:sLis,mappings:maps,setMappings:sMaps,waste,setWaste:sWaste,accIds,setAccIds:sAccIds,onNext:()=>adv(3),onBack:()=>ss(1)}),
-        step===3&&React.createElement(Step4,{selIds,allProds:prods,fmap,lineItems:lis,mappings:maps,tiers,setTiers:sTiers,accIds,pkgNames,setPkgNames:sPkgNames,regionMult,setRegionMult:sRegionMult,onNext:()=>adv(4),onBack:()=>ss(2)}),
-        step===4&&React.createElement(Step5,{auth,selIds,allProds:prods,lineItems:lis,mappings:maps,tiers,fmap,waste,accIds,pkgNames,regionMult,onBack:()=>ss(3)})
+        step===3&&React.createElement(Step4,{selIds,allProds:prods,fmap,lineItems:lis,mappings:maps,tiers,setTiers:sTiers,accIds,pkgNames,setPkgNames:sPkgNames,onNext:()=>adv(4),onBack:()=>ss(2)}),
+        step===4&&React.createElement(Step5,{auth,selIds,allProds:prods,lineItems:lis,mappings:maps,tiers,fmap,waste,accIds,pkgNames,onBack:()=>ss(3)})
       )
     )
   );
